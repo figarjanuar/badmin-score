@@ -1,36 +1,36 @@
 # 🏸 BadminScore
 
-**Aplikasi manajemen sesi badminton** — atur jadwal main, rotasi pemain, dan skor dengan adil dan otomatis.
+**Badminton session management app** — organize game schedules, player rotation, and scores fairly and automatically.
 
-Dibangun dengan **Vue 3 + Vite**, 100% client-side (data disimpan di localStorage). Cocok dipakai buat latihan rutin, pertandingan komunitas, atau event badminton internal.
+Built with **Vue 3 + Vite**, 100% client-side (data stored in localStorage). Great for regular practice sessions, community tournaments, or internal badminton events.
 
 ---
 
-## ✨ Fitur
+## ✨ Features
 
-| Fitur | Deskripsi |
-|-------|-----------|
-| 📊 **Dashboard** | Lihat semua sesi game, status (berjalan/selesai), akses cepat |
-| ⚙️ **Konfigurasi Game** | Atur nama event, jumlah lapangan, daftar pemain |
-| 🔄 **Rotasi Otomatis** | Algoritma pembagian pasangan adil — minim pengulangan partner, distribusi main merata |
-| 📋 **Per Ronde** | Navigasi antar ronde, lihat pasangan & pemain istirahat |
-| ✏️ **Input Skor** | Edit skor tiap pertandingan per ronde |
-| 🏆 **Scoreboard & Klasemen** | Win rate, jumlah main, riwayat pertandingan per pemain |
-| 💾 **Tersimpan Lokal** | Data game tetap tersimpan di browser (localStorage) |
+| Feature | Description |
+|---------|-------------|
+| 📊 **Dashboard** | View all game sessions, status (active/completed), quick access |
+| ⚙️ **Game Configuration** | Set event name, number of courts, player list |
+| 🔄 **Auto Rotation** | Fair pair distribution algorithm — minimize partner repetition, even play distribution |
+| 📋 **Per Round** | Navigate between rounds, view pairings |
+| ✏️ **Score Input** | Edit scores for each match per round |
+| 🏆 **Scoreboard & Standings** | Win rate, games played, match history per player |
+| 💾 **Local Storage** | Game data persists in browser (localStorage) |
 
-### 🧠 Cara Kerja Rotasi
+### 🧠 How Rotation Works
 
-1. Masukkan jumlah lapangan dan daftar pemain
-2. Klik **Generate Jadwal** — algoritma menghitung ronde optimal (target ~4 game per pemain)
-3. Tiap ronde, pemain dengan jumlah main paling sedikit diprioritaskan
-4. Pasangan dipilih untuk **meminimalkan pengulangan partner** sepanjang sesi
-5. Review ronde, input skor, selesai!
+1. Enter the number of courts and player list
+2. Click **Generate Schedule** — algorithm calculates optimal rounds (target ~4 games per player)
+3. Each round, players with the fewest games played are prioritized
+4. Pairs are chosen to **minimize partner repetition** throughout the session
+5. Review rounds, input scores, done!
 
 ---
 
 ## 🚀 Demo / Live
 
-> Aplikasi ini di-deploy di GitHub Pages:  
+> This app is deployed on GitHub Pages:  
 > **[https://figarjanuar.github.io/badmin-score](https://figarjanuar.github.io/badmin-score)**
 
 ---
@@ -40,12 +40,12 @@ Dibangun dengan **Vue 3 + Vite**, 100% client-side (data disimpan di localStorag
 - **Framework** — [Vue 3](https://vuejs.org/) (Composition API, `<script setup>`, SFC)
 - **Build Tool** — [Vite](https://vite.dev/)
 - **Plugin** — [@vitejs/plugin-vue](https://github.com/vitejs/vite-plugin-vue)
-- **Penyimpanan** — `localStorage` via composable `useStorage`
+- **Storage** — `localStorage` via `useStorage` composable
 - **Deploy** — GitHub Pages (`gh-pages` branch / `dist/` folder)
 
 ---
 
-## 📦 Instalasi & Pengembangan
+## 📦 Installation & Development
 
 ```bash
 # Clone repo
@@ -55,79 +55,79 @@ cd badmin-score
 # Install dependencies
 npm install
 
-# Jalankan dev server
+# Start dev server
 npm run dev
 
-# Build untuk production
+# Build for production
 npm run build
 
-# Preview hasil build
+# Preview build result
 npm run preview
 ```
 
-### Struktur Project
+### Project Structure
 
 ```
 badmin-score/
 ├── index.html               # Entry HTML
-├── vite.config.js            # Konfigurasi Vite
+├── vite.config.js            # Vite configuration
 ├── public/
 │   ├── favicon.svg
 │   └── icons.svg
 ├── src/
-│   ├── main.js               # Entry Vue app
-│   ├── App.vue                # Root component + routing sederhana
+│   ├── main.js               # Vue app entry point
+│   ├── App.vue                # Root component + simple routing
 │   ├── style.css              # Global styles & CSS variables
 │   ├── components/
-│   │   └── EditScoreModal.vue  # Modal input skor
+│   │   └── EditScoreModal.vue  # Score input modal
 │   ├── composables/
-│   │   ├── useRotation.js      # Algoritma generate jadwal rotasi
-│   │   └── useStorage.js       # Wrapper localStorage (reaktif)
+│   │   ├── useRotation.js      # Rotation schedule generation algorithm
+│   │   └── useStorage.js       # Reactive localStorage wrapper
 │   └── views/
-│       ├── DashboardView.vue   # Halaman utama
-│       ├── ConfigView.vue      # Konfigurasi game & pemain
-│       ├── RotationView.vue    # Lihat ronde + edit skor
-│       └── ScoreboardView.vue  # Klasemen & hasil pertandingan
-└── dist/                      # Hasil build siap deploy
+│       ├── DashboardView.vue   # Home page
+│       ├── ConfigView.vue      # Game & player configuration
+│       ├── RotationView.vue    # Round view + score editing
+│       └── ScoreboardView.vue  # Standings & match results
+└── dist/                      # Build output ready for deploy
 ```
 
 ---
 
-## ⚙️ Konfigurasi
+## ⚙️ Configuration
 
 ### CSS Variables
 
-Global styling diatur via CSS custom properties di `src/style.css`:
+Global styling is managed via CSS custom properties in `src/style.css`:
 
 ```css
---primary: #2563eb;        /* Warna utama (biru) */
---primary-bg: #dbeafe;     /* Background warna utama */
---bg: #f0f2f5;             /* Background halaman */
---card-bg: #ffffff;        /* Background card */
---text-primary: #1f2937;   /* Warna teks utama */
---text-secondary: #6b7280; /* Warna teks sekunder */
---danger: #ef4444;         /* Warna error/danger */
---green: #16a34a;          /* Warna sukses/hijau */
---yellow: #d97706;         /* Warna peringatan/kuning */
+--primary: #2563eb;        /* Primary color (blue) */
+--primary-bg: #dbeafe;     /* Primary background */
+--bg: #f0f2f5;             /* Page background */
+--card-bg: #ffffff;        /* Card background */
+--text-primary: #1f2937;   /* Primary text color */
+--text-secondary: #6b7280; /* Secondary text color */
+--danger: #ef4444;         /* Error/danger color */
+--green: #16a34a;          /* Success/green color */
+--yellow: #d97706;         /* Warning/yellow color */
 ```
 
 ### Vite Config
 
-- **base**: `'/badmin-score/'` (disesuaikan untuk GitHub Pages)
+- **base**: `'/badmin-score/'` (configured for GitHub Pages)
 - **Plugin**: Vue SFC compiler
 
 ---
 
-## 📄 Lisensi
+## 📄 License
 
 Distributed under the **MIT License**. See `LICENSE` for more information.
 
 ---
 
-## 🙌 Kontribusi
+## 🙌 Contributing
 
-Pull request dipersilakan! Untuk perubahan besar, buka issue dulu untuk diskusi.
+Pull requests are welcome! For major changes, please open an issue first to discuss what you'd like to change.
 
 ---
 
-*Dibuat dengan ❤️ untuk komunitas badminton*
+*Made with ❤️ for the badminton community*
