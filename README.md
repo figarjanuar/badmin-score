@@ -31,7 +31,7 @@ Dibangun dengan **Vue 3 + Vite**, 100% client-side (data disimpan di localStorag
 ## 🚀 Demo / Live
 
 > Aplikasi ini di-deploy di GitHub Pages:  
-> **[https://figar.github.io/badmin-score](https://figar.github.io/badmin-score)**
+> **[https://figarjanuar.github.io/badmin-score](https://figarjanuar.github.io/badmin-score)**
 
 ---
 
@@ -49,7 +49,7 @@ Dibangun dengan **Vue 3 + Vite**, 100% client-side (data disimpan di localStorag
 
 ```bash
 # Clone repo
-git clone https://github.com/figar/badmin-score.git
+git clone https://github.com/figarjanuar/badmin-score.git
 cd badmin-score
 
 # Install dependencies
