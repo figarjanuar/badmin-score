@@ -76,16 +76,6 @@
       </div>
     </div>
 
-    <!-- Resting players -->
-    <div class="resting" v-if="round && round.resting.length > 0">
-      <h3 class="resting-title">Istirahat</h3>
-      <div class="resting-list">
-        <span class="player-tag resting-tag" v-for="pid in round.resting" :key="pid">
-          {{ playerName(pid) }}
-        </span>
-      </div>
-    </div>
-
     <!-- Standings -->
     <div class="rotation-actions">
       <button
@@ -408,30 +398,6 @@ function confirmFinish() {
   font-size: 12px;
   color: var(--text-secondary);
   font-style: italic;
-}
-
-/* Resting */
-.resting {
-  margin-bottom: 16px;
-}
-
-.resting-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin: 0 0 8px;
-}
-
-.resting-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.resting-tag {
-  background: var(--tag-dim-bg);
-  color: var(--text-secondary);
-  font-weight: 400;
 }
 
 /* Actions */
