@@ -97,7 +97,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
-import { generateSession } from '../composables/useRotation.js'
+import { generateSession, estimateRounds } from '../composables/useRotation.js'
 
 const emit = defineEmits(['navigate'])
 const { addGame } = useStorage()
@@ -122,9 +122,7 @@ const players = ref(
 
 const effectiveMinPlayers = computed(() => numCourts.value * 4)
 
-const targetRounds = computed(() => {
-  return Math.max(1, Math.ceil((players.value.length * 4) / (numCourts.value * 4)))
-})
+const targetRounds = computed(() => estimateRounds(numCourts.value, players.value.length))
 
 function changeCourts(delta) {
   const next = numCourts.value + delta
