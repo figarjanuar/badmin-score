@@ -70,18 +70,43 @@
       <p>Belum ada skor yang dimasukkan</p>
     </div>
 
-    <!-- Back button -->
-    <button
-      class="btn btn-outline btn-full back-btn"
-      @click="emit('back')"
-    >
-      ⬅ Kembali
-    </button>
+    <div class="scoreboard-actions">
+      <button
+        v-if="game?.completed"
+        class="btn btn-primary btn-full"
+        @click="showReopenConfirm = true"
+      >
+        🔓 Reopen Sesi
+      </button>
+      <button
+        class="btn btn-outline btn-full back-btn"
+        @click="emit('back')"
+      >
+        ⬅ Kembali
+      </button>
+    </div>
+
+    <!-- Reopen Confirmation Modal -->
+    <div v-if="showReopenConfirm" class="modal-overlay" @click.self="showReopenConfirm = false">
+      <div class="modal-container">
+        <div class="modal-header">
+          <h2 class="modal-title">🔓 Reopen Sesi?</h2>
+          <button class="modal-close" @click="showReopenConfirm = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-text">Sesi akan dikembalikan ke mode berjalan, jadi skor dan ronde bisa diedit lagi kalau sebelumnya kepencet selesai.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showReopenConfirm = false">Batal</button>
+          <button class="btn btn-primary" @click="confirmReopen">🔓 Ya, Reopen</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
 
 const props = defineProps({
@@ -89,7 +114,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['navigate', 'back'])
 
-const { getGame } = useStorage()
+const { getGame, updateGame } = useStorage()
+const showReopenConfirm = ref(false)
 const game = computed(() => getGame(props.gameId))
 
 function formatDate(iso) {
@@ -179,6 +205,12 @@ const standings = computed(() => {
     })
 })
 
+function confirmReopen() {
+  updateGame(props.gameId, { completed: false })
+  showReopenConfirm.value = false
+  emit('navigate', 'rotation', props.gameId)
+}
+
 // back navigation handled via viewStack in App.vue (@back event)
 </script>
 
@@ -230,6 +262,13 @@ const standings = computed(() => {
 .stat-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.scoreboard-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 /* Section title */
@@ -400,9 +439,80 @@ const standings = computed(() => {
 }
 .btn:active { opacity: 0.8; }
 .btn-full { width: 100%; }
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
 .btn-outline {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-primary);
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-container {
+  background: var(--card-bg);
+  width: 100%;
+  max-width: 340px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  font-size: 17px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.confirm-text {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+
+.modal-footer .btn {
+  flex: 1;
 }
 </style>
