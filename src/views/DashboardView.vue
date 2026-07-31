@@ -33,8 +33,34 @@
           </div>
         </div>
         <div class="game-card-status">
+          <span v-if="game.synced" class="badge badge-synced">☁️ Sync</span>
           <span v-if="game.completed" class="badge badge-done">Selesai</span>
           <span v-else class="badge badge-progress">Berjalan</span>
+          <button
+            class="delete-btn"
+            title="Hapus game"
+            @click.stop="askDelete(game)"
+          >🗑️</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div v-if="gameToDelete" class="modal-overlay" @click.self="gameToDelete = null">
+      <div class="modal-container">
+        <div class="modal-header">
+          <h2 class="modal-title">🗑️ Hapus Game?</h2>
+          <button class="modal-close" @click="gameToDelete = null">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-text">
+            Game <strong>"{{ gameToDelete.name || 'Game ' + formatDate(gameToDelete.createdAt) }}"</strong>
+            akan dihapus permanen dari perangkat ini{{ gameToDelete.synced ? ' dan dari Firestore' : '' }}.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="gameToDelete = null">Batal</button>
+          <button class="btn btn-danger" @click="confirmDelete">🗑️ Ya, Hapus</button>
         </div>
       </div>
     </div>
@@ -50,18 +76,32 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
 
 const emit = defineEmits(['navigate'])
-const { getGames } = useStorage()
+const { getGames, deleteGame } = useStorage()
 
 const games = computed(() => getGames())
+
+// Delete confirmation state
+const gameToDelete = ref(null)
 
 function openGame(id) {
   const game = getGames().find((g) => g.id === id)
   const view = game?.completed ? 'scoreboard' : 'rotation'
   emit('navigate', view, id)
+}
+
+function askDelete(game) {
+  gameToDelete.value = game
+}
+
+function confirmDelete() {
+  if (gameToDelete.value) {
+    deleteGame(gameToDelete.value.id)
+  }
+  gameToDelete.value = null
 }
 
 function formatDate(iso) {
@@ -180,6 +220,119 @@ function formatDate(iso) {
 .badge-progress {
   background: var(--yellow-bg);
   color: var(--yellow);
+}
+
+.badge-synced {
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+
+.game-card-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.delete-btn {
+  background: var(--tag-bg);
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+}
+
+.delete-btn:hover {
+  background: #fee2e2;
+}
+
+.delete-btn:active {
+  opacity: 0.7;
+}
+
+/* Delete confirmation modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-container {
+  background: var(--card-bg);
+  width: 100%;
+  max-width: 340px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  font-size: 17px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.confirm-text {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+
+.modal-footer .btn {
+  flex: 1;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
 }
 
 /* FAB */

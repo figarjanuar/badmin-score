@@ -3,20 +3,28 @@
     <!-- Top bar: header actions -->
     <div class="rotation-topbar">
       <h2 class="topbar-title">{{ game?.name || 'Rotasi' }}</h2>
-      <button
-        v-if="!game?.completed"
-        class="btn btn-success btn-sm"
-        @click="finishSession"
-      >
-        ✅ Selesai
-      </button>
-      <button
-        v-else
-        class="btn btn-outline btn-sm"
-        @click="$emit('navigate', 'scoreboard', gameId)"
-      >
-        🏆 Scoreboard
-      </button>
+      <div class="topbar-actions">
+        <button
+          class="btn btn-outline btn-sm btn-share"
+          @click="openShare"
+        >
+          🔗 Bagikan
+        </button>
+        <button
+          v-if="!game?.completed"
+          class="btn btn-success btn-sm"
+          @click="finishSession"
+        >
+          ✅ Selesai
+        </button>
+        <button
+          v-else
+          class="btn btn-outline btn-sm"
+          @click="$emit('navigate', 'scoreboard', gameId)"
+        >
+          🏆 Scoreboard
+        </button>
+      </div>
     </div>
 
     <!-- Round navigation -->
@@ -24,19 +32,6 @@
       <button class="nav-btn" @click="prevRound" :disabled="currentRound === 0">◀</button>
       <span class="round-label">Ronde {{ currentRound + 1 }}/{{ totalRounds }}</span>
       <button class="nav-btn" @click="nextRound" :disabled="currentRound >= totalRounds - 1">▶</button>
-    </div>
-
-    <!-- Compact play count badges -->
-    <div class="play-chips" v-if="false">
-      <span
-        v-for="p in playerSummaries"
-        :key="p.id"
-        class="play-chip"
-        :class="{ 'chip-done': p.gamesPlayed >= targetGames }"
-      >
-        <span class="chip-name">{{ p.name }}</span>
-        <span class="chip-count">{{ p.gamesPlayed }}x</span>
-      </span>
     </div>
 
     <!-- Court cards for current round -->
@@ -48,30 +43,91 @@
       >
         <div class="court-header">
           <span>Lapangan {{ court.court }}</span>
-          <button class="court-edit-btn" @click="openEditModal(court.court)">✏️</button>
+          <button class="court-edit-btn" @click="openEditModal(court.court)" title="Edit skor manual">✏️</button>
         </div>
-        <div class="court-match">
-          <div class="pair pair-home">
-            <div class="player-tag" v-for="pid in court.pair1" :key="pid">
-              {{ playerName(pid) }}
+
+        <!-- Inline Scoreboard -->
+        <div class="court-scoreboard">
+          <!-- Team 1 (Home) -->
+          <div class="sb-team">
+            <div class="sb-players">
+              <span v-for="pid in court.pair1" :key="pid" class="sb-player-name">{{ playerName(pid) }}</span>
+            </div>
+            <div class="sb-score-controls">
+              <button
+                class="sb-btn sb-minus"
+                @click="adjustScore(court.court, 1, -1)"
+                :disabled="game?.completed"
+              >−</button>
+
+              <!-- Inline edit or display -->
+              <span
+                v-if="editingCourt !== court.court || editingSide !== 1"
+                class="sb-score"
+                @click="startInlineEdit(court.court, 1)"
+              >{{ court.score1 ?? 0 }}</span>
+              <input
+                v-else
+                ref="inlineInput"
+                type="number"
+                class="sb-score-input"
+                v-model.number="inlineScore"
+                @blur="commitInlineEdit(court.court, 1)"
+                @keyup.enter="commitInlineEdit(court.court, 1)"
+                min="0"
+                max="99"
+                inputmode="numeric"
+              />
+
+              <button
+                class="sb-btn sb-plus"
+                @click="adjustScore(court.court, 1, 1)"
+                :disabled="game?.completed"
+              >+</button>
             </div>
           </div>
-          <div class="vs">VS</div>
-          <div class="pair pair-away">
-            <div class="player-tag" v-for="pid in court.pair2" :key="pid">
-              {{ playerName(pid) }}
+
+          <!-- VS divider -->
+          <div class="sb-vs">VS</div>
+
+          <!-- Team 2 (Away) -->
+          <div class="sb-team">
+            <div class="sb-players">
+              <span v-for="pid in court.pair2" :key="pid" class="sb-player-name">{{ playerName(pid) }}</span>
+            </div>
+            <div class="sb-score-controls">
+              <button
+                class="sb-btn sb-minus"
+                @click="adjustScore(court.court, 2, -1)"
+                :disabled="game?.completed"
+              >−</button>
+
+              <!-- Inline edit or display -->
+              <span
+                v-if="editingCourt !== court.court || editingSide !== 2"
+                class="sb-score"
+                @click="startInlineEdit(court.court, 2)"
+              >{{ court.score2 ?? 0 }}</span>
+              <input
+                v-else
+                ref="inlineInput"
+                type="number"
+                class="sb-score-input"
+                v-model.number="inlineScore"
+                @blur="commitInlineEdit(court.court, 2)"
+                @keyup.enter="commitInlineEdit(court.court, 2)"
+                min="0"
+                max="99"
+                inputmode="numeric"
+              />
+
+              <button
+                class="sb-btn sb-plus"
+                @click="adjustScore(court.court, 2, 1)"
+                :disabled="game?.completed"
+              >+</button>
             </div>
           </div>
-        </div>
-        <div class="court-score-display" v-if="court.score1 !== null && court.score2 !== null">
-          <span class="score-display">
-            <span class="score-home">{{ court.score1 }}</span>
-            <span class="score-sep"> - </span>
-            <span class="score-away">{{ court.score2 }}</span>
-          </span>
-        </div>
-        <div class="court-score-display score-empty" v-else>
-          <span class="score-placeholder">— Belum ada skor —</span>
         </div>
       </div>
     </div>
@@ -103,7 +159,14 @@
       </div>
     </div>
 
-    <!-- Edit Score Modal (per match) -->
+    <!-- Share Modal -->
+    <ShareModal
+      v-if="showShareModal"
+      :url="shareUrl"
+      @close="showShareModal = false"
+    />
+
+    <!-- Edit Score Modal (fallback for detailed editing) -->
     <EditScoreModal
       v-if="editCourt"
       :court="editCourtData"
@@ -115,20 +178,32 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
+import { pushGame } from '../composables/useFirestore.js'
 import EditScoreModal from '../components/EditScoreModal.vue'
+import ShareModal from '../components/ShareModal.vue'
 
 const props = defineProps({
   gameId: { type: String, required: true },
 })
 const emit = defineEmits(['navigate'])
 
-const { getGame, updateGame } = useStorage()
+const { getGame, updateGame, subscribeToGame } = useStorage()
 const game = computed(() => getGame(props.gameId))
 const currentRound = ref(0)
 const editCourt = ref(null)
 const showFinishConfirm = ref(false)
+
+// Scoreboard inline edit state
+const editingCourt = ref(null)
+const editingSide = ref(null)
+const inlineScore = ref(0)
+const inlineInput = ref(null)
+
+// Share state
+const showShareModal = ref(false)
+const shareUrl = ref('')
 
 const totalRounds = computed(() => game.value?.rounds.length || 0)
 const targetGames = computed(() =>
@@ -178,6 +253,63 @@ function handleScoreSave(updatedCourt) {
   editCourt.value = null
 }
 
+// --- Scoreboard inline controls ---
+
+function adjustScore(courtNum, side, delta) {
+  if (game.value?.completed) return
+  const rounds = JSON.parse(JSON.stringify(game.value.rounds))
+  const courts = rounds[currentRound.value].courts
+  const court = courts.find((c) => c.court === courtNum)
+  if (!court) return
+  const key = side === 1 ? 'score1' : 'score2'
+  const current = court[key] ?? 0
+  court[key] = Math.max(0, current + delta)
+  updateGame(props.gameId, { rounds })
+}
+
+function startInlineEdit(courtNum, side) {
+  if (game.value?.completed) return
+  editingCourt.value = courtNum
+  editingSide.value = side
+  const court = round.value.courts.find((c) => c.court === courtNum)
+  const key = side === 1 ? 'score1' : 'score2'
+  inlineScore.value = court?.[key] ?? 0
+  nextTick(() => {
+    if (inlineInput.value) {
+      // inlineInput is an array of refs; grab the last one rendered
+      const inputs = Array.isArray(inlineInput.value) ? inlineInput.value : [inlineInput.value]
+      const el = inputs[inputs.length - 1]
+      if (el && el.focus) el.focus()
+    }
+  })
+}
+
+function commitInlineEdit(courtNum, side) {
+  const rounds = JSON.parse(JSON.stringify(game.value.rounds))
+  const courts = rounds[currentRound.value].courts
+  const court = courts.find((c) => c.court === courtNum)
+  if (!court) return
+  const key = side === 1 ? 'score1' : 'score2'
+  court[key] = Math.max(0, inlineScore.value)
+  updateGame(props.gameId, { rounds })
+  editingCourt.value = null
+  editingSide.value = null
+}
+
+// --- Share ---
+
+function openShare() {
+  shareUrl.value = `${window.location.origin}${window.location.pathname}#/match/${props.gameId}`
+  window.location.hash = `#/match/${props.gameId}`
+  // Ensure game is pushed to Firestore before sharing
+  if (game.value) {
+    pushGame(game.value).catch(() => {})
+  }
+  showShareModal.value = true
+}
+
+// --- Finish session ---
+
 function finishSession() {
   showFinishConfirm.value = true
 }
@@ -187,6 +319,24 @@ function confirmFinish() {
   showFinishConfirm.value = false
   emit('navigate', 'scoreboard', props.gameId)
 }
+
+// --- Real-time subscription ---
+
+let unsubscribe = null
+
+onMounted(() => {
+  // Subscribe to Firestore for real-time sync if game is already shared
+  if (window.location.hash.includes(`#/match/${props.gameId}`)) {
+    unsubscribe = subscribeToGame(props.gameId)
+  }
+})
+
+onUnmounted(() => {
+  if (unsubscribe) {
+    unsubscribe()
+    unsubscribe = null
+  }
+})
 </script>
 
 <style scoped>
@@ -202,12 +352,20 @@ function confirmFinish() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .topbar-title {
   font-size: 18px;
   margin: 0;
   color: var(--text-primary);
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 /* Round nav */
@@ -320,84 +478,124 @@ function confirmFinish() {
   background: rgba(255,255,255,0.35);
 }
 
-.court-match {
+/* --- Inline Scoreboard --- */
+
+.court-scoreboard {
   display: flex;
-  align-items: flex-start;
-  padding: 16px 16px 12px;
-  gap: 0;
+  align-items: center;
+  padding: 12px 12px 16px;
+  gap: 4px;
 }
 
-.pair {
+.sb-team {
   flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.sb-players {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.sb-player-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  word-break: break-word;
+}
+
+.sb-score-controls {
+  display: flex;
+  align-items: center;
   gap: 6px;
 }
 
-.pair-home {
-  align-items: stretch;
+.sb-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 
-.pair-away {
-  align-items: flex-end;
+.sb-btn:active {
+  opacity: 0.7;
 }
 
-.pair-home .player-tag {
-  display: block;
+.sb-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
-.pair-away .player-tag {
-  display: inline-block;
-  padding: 6px 8px;
+.sb-minus {
+  background: #fee2e2;
+  color: #ef4444;
 }
 
-.vs {
-  padding: 16px 12px 0;
-  font-size: 13px;
+.sb-plus {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.sb-score {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+  min-width: 40px;
+  text-align: center;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.sb-score:hover {
+  background: var(--tag-bg);
+}
+
+.sb-score-input {
+  width: 50px;
+  height: 40px;
+  font-size: 28px;
+  font-weight: 800;
+  text-align: center;
+  border: 2px solid var(--primary);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.sb-score-input::-webkit-inner-spin-button,
+.sb-score-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.sb-vs {
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-secondary);
-}
-
-.player-tag {
-  width: 100%;
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  background: var(--tag-bg);
-  color: var(--text-primary);
-}
-
-/* Score display */
-.court-score-display {
-  text-align: center;
-  padding: 0 16px 12px;
-}
-
-.score-display {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  font-size: 20px;
-  font-weight: 800;
-  background: var(--primary-bg);
-  padding: 4px 20px;
-  border-radius: 8px;
-}
-
-.score-home { color: var(--green); }
-.score-away { color: var(--primary); }
-.score-sep { color: var(--text-secondary); }
-
-.score-empty {
-  padding-bottom: 12px;
-}
-
-.score-placeholder {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-style: italic;
+  padding: 0 4px;
+  align-self: flex-start;
+  margin-top: 28px;
 }
 
 /* Actions */
@@ -436,6 +634,10 @@ function confirmFinish() {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-primary);
+}
+.btn-share {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 /* Confirmation modal */

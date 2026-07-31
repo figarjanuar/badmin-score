@@ -37,11 +37,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useStorage } from './composables/useStorage.js'
 import DashboardView from './views/DashboardView.vue'
 import ConfigView from './views/ConfigView.vue'
 import RotationView from './views/RotationView.vue'
 import ScoreboardView from './views/ScoreboardView.vue'
+
+const { loadRemoteGame, subscribeToGame } = useStorage()
 
 const currentView = ref('dashboard')
 const activeGameId = ref(null)
@@ -57,12 +60,23 @@ const headerTitle = computed(() => {
 })
 
 const viewStack = ref(['dashboard'])
+let activeUnsubscribe = null
 
 function handleNavigate(view, gameId) {
+  // Cleanup previous Firestore subscription
+  if (activeUnsubscribe) {
+    activeUnsubscribe()
+    activeUnsubscribe = null
+  }
+
   if (view === 'dashboard') {
     viewStack.value = ['dashboard']
     currentView.value = 'dashboard'
     activeGameId.value = null
+    // Clear hash when going to dashboard
+    if (window.location.hash) {
+      window.location.hash = ''
+    }
   } else {
     viewStack.value.push(currentView.value)
     currentView.value = view
@@ -73,12 +87,51 @@ function handleNavigate(view, gameId) {
 }
 
 function goBack() {
+  // Cleanup Firestore subscription
+  if (activeUnsubscribe) {
+    activeUnsubscribe()
+    activeUnsubscribe = null
+  }
+
   if (viewStack.value.length > 0) {
     currentView.value = viewStack.value.pop()
   } else {
     currentView.value = 'dashboard'
   }
 }
+
+async function handleHashChange() {
+  const hash = window.location.hash
+  const match = hash.match(/^#\/match\/(.+)$/)
+  if (match) {
+    const gameId = match[1]
+    const game = await loadRemoteGame(gameId)
+    if (game) {
+      // Cleanup previous subscription
+      if (activeUnsubscribe) activeUnsubscribe()
+
+      currentView.value = game.completed ? 'scoreboard' : 'rotation'
+      activeGameId.value = gameId
+      viewStack.value = ['dashboard']
+
+      // Subscribe to real-time updates
+      activeUnsubscribe = subscribeToGame(gameId)
+    }
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('hashchange', handleHashChange)
+  // Handle initial load with hash
+  if (window.location.hash) {
+    handleHashChange()
+  }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('hashchange', handleHashChange)
+  if (activeUnsubscribe) activeUnsubscribe()
+})
 </script>
 
 <style>
