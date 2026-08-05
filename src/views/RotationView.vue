@@ -132,14 +132,38 @@
       </div>
     </div>
 
-    <!-- Standings -->
+<!-- Actions -->
     <div class="rotation-actions">
+      <button
+        v-if="!game?.completed"
+        class="btn btn-outline btn-full"
+        @click="requestAddRound"
+      >
+        ➕ Tambah Ronde
+      </button>
       <button
         class="btn btn-outline btn-full btn-standings"
         @click="$emit('navigate', 'scoreboard', gameId)"
       >
         🏆 Lihat Klasemen
       </button>
+    </div>
+
+    <!-- Add Round Confirmation Modal -->
+    <div v-if="showAddRoundConfirm" class="modal-overlay" @click.self="showAddRoundConfirm = false">
+      <div class="modal-container">
+        <div class="modal-header">
+          <h2 class="modal-title">➕ Tambah Ronde?</h2>
+          <button class="modal-close" @click="showAddRoundConfirm = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-text">Ronde ke-{{ totalRounds + 1 }} akan ditambahkan. Pemain akan dirotasi otomatis berdasarkan statistik permainan sebelumnya.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="showAddRoundConfirm = false">Batal</button>
+          <button class="btn btn-primary" @click="confirmAddRound">➕ Ya, Tambah</button>
+        </div>
+      </div>
     </div>
 
     <!-- Finish Confirmation Modal -->
@@ -181,6 +205,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
 import { pushGame } from '../composables/useFirestore.js'
+import { generateNextRound } from '../composables/useRotation.js'
 import EditScoreModal from '../components/EditScoreModal.vue'
 import ShareModal from '../components/ShareModal.vue'
 
@@ -194,6 +219,7 @@ const game = computed(() => getGame(props.gameId))
 const currentRound = ref(0)
 const editCourt = ref(null)
 const showFinishConfirm = ref(false)
+const showAddRoundConfirm = ref(false)
 
 // Scoreboard inline edit state
 const editingCourt = ref(null)
@@ -219,16 +245,6 @@ const editCourtData = computed(() => {
 function playerName(id) {
   return game.value?.players.find((p) => p.id === id)?.name || `P${id}`
 }
-
-const playerSummaries = computed(() => {
-  if (!game.value) return []
-  return game.value.players.map((p) => {
-    const gamesPlayed = game.value.rounds.filter((r) =>
-      r.courts.some((c) => c.pair1.includes(p.id) || c.pair2.includes(p.id))
-    ).length
-    return { ...p, gamesPlayed }
-  })
-})
 
 function prevRound() {
   if (currentRound.value > 0) currentRound.value--
@@ -318,6 +334,29 @@ function confirmFinish() {
   updateGame(props.gameId, { completed: true })
   showFinishConfirm.value = false
   emit('navigate', 'scoreboard', props.gameId)
+}
+
+// --- Add round ---
+
+function requestAddRound() {
+  showAddRoundConfirm.value = true
+}
+
+function confirmAddRound() {
+  showAddRoundConfirm.value = false
+  if (!game.value) return
+
+  const newRound = generateNextRound(game.value)
+  if (!newRound) {
+    alert('Gagal menghasilkan ronde baru. Coba lagi.')
+    return
+  }
+
+  const rounds = [...game.value.rounds, newRound]
+  updateGame(props.gameId, { rounds })
+
+  // Navigate to the new round
+  currentRound.value = rounds.length - 1
 }
 
 // --- Real-time subscription ---

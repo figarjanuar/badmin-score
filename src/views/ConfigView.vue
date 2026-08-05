@@ -23,6 +23,34 @@
       </div>
     </div>
 
+    <!-- Rotation mode -->
+    <div class="field">
+      <label class="field-label">Mode Rotasi</label>
+      <div class="mode-toggle">
+        <button
+          class="mode-btn"
+          :class="{ active: rotationMode === 'americano' }"
+          @click="rotationMode = 'americano'"
+        >
+          <span class="mode-emoji">⚡</span>
+          <span class="mode-label">Cepat</span>
+        </button>
+        <button
+          class="mode-btn"
+          :class="{ active: rotationMode === 'completePartner' }"
+          @click="rotationMode = 'completePartner'"
+        >
+          <span class="mode-emoji">🤝</span>
+          <span class="mode-label">Lengkap</span>
+        </button>
+      </div>
+      <p class="mode-desc">
+        {{ rotationMode === 'americano'
+          ? 'Ronde lebih sedikit, semua pemain ketemu semua (partner & lawan). Cocok buat sesi santai.'
+          : 'Setiap pemain jadi partner dengan semua pemain lain. Ronde lebih banyak & lengkap.' }}
+      </p>
+    </div>
+
     <!-- Player names -->
     <div class="field">
       <div class="field-row">
@@ -97,13 +125,14 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
-import { generateSession, estimateRounds } from '../composables/useRotation.js'
+import { generateSession, estimateRounds, estimateRoundsCompletePartner } from '../composables/useRotation.js'
 
 const emit = defineEmits(['navigate'])
 const { addGame } = useStorage()
 
 const eventName = ref('')
 const numCourts = ref(2)
+const rotationMode = ref('americano')
 
 const DEFAULT_NAMES = [
   'Andi', 'Budi', 'Citra', 'Dedi', 'Eka', 'Fitri', 'Gilang',
@@ -122,7 +151,12 @@ const players = ref(
 
 const effectiveMinPlayers = computed(() => numCourts.value * 4)
 
-const targetRounds = computed(() => estimateRounds(numCourts.value, players.value.length))
+const targetRounds = computed(() => {
+  if (rotationMode.value === 'completePartner') {
+    return estimateRoundsCompletePartner(numCourts.value, players.value.length)
+  }
+  return estimateRounds(numCourts.value, players.value.length)
+})
 
 function changeCourts(delta) {
   const next = numCourts.value + delta
@@ -157,7 +191,7 @@ function generate() {
     return
   }
 
-  const game = generateSession(numCourts.value, filled.map((p) => ({ id: p.id, name: p.name.trim() })))
+  const game = generateSession(numCourts.value, filled.map((p) => ({ id: p.id, name: p.name.trim() })), rotationMode.value)
   game.name = eventName.value.trim() || `Game ${new Date().toLocaleDateString('id-ID')}`
   game.completed = false
 
@@ -238,6 +272,48 @@ function generate() {
   min-width: 32px;
   text-align: center;
   color: var(--text-primary);
+}
+
+/* Mode toggle */
+.mode-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.mode-btn.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--card-bg));
+}
+
+.mode-emoji {
+  font-size: 22px;
+}
+
+.mode-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mode-desc {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 /* Player list */

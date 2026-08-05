@@ -21,22 +21,35 @@
       </div>
     </div>
 
-    <!-- Player standings -->
+    <!-- Player standings table -->
     <h3 class="section-title">🏆 Klasemen</h3>
-    <div class="standings" v-if="standings.length > 0">
-      <div
-        v-for="(item, idx) in standings"
-        :key="item.id"
-        class="standing-row"
-        :class="{ 'standing-gold': idx === 0, 'standing-silver': idx === 1, 'standing-bronze': idx === 2 }"
-      >
-        <span class="standing-rank">{{ idx + 1 }}</span>
-        <div class="standing-info">
-          <span class="standing-name">{{ item.name }}</span>
-          <span class="standing-detail">{{ item.winRate }}% menang ({{ item.wins }}W / {{ item.losses }}L)</span>
-        </div>
-        <span class="standing-games">{{ item.gamesPlayed }} main</span>
-      </div>
+    <div class="standings-table-wrap">
+      <table class="standings-table">
+        <thead>
+          <tr>
+            <th class="col-rank">#</th>
+            <th class="col-name">Nama</th>
+            <th class="col-num">M</th>
+            <th class="col-num">W</th>
+            <th class="col-num">L</th>
+            <th class="col-num">WR</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(item, idx) in standings"
+            :key="item.id"
+            :class="{ 'row-gold': idx === 0 && item.gamesPlayed > 0, 'row-silver': idx === 1 && item.gamesPlayed > 0, 'row-bronze': idx === 2 && item.gamesPlayed > 0 }"
+          >
+            <td class="col-rank">{{ idx + 1 }}</td>
+            <td class="col-name">{{ item.name }}</td>
+            <td class="col-num">{{ item.gamesPlayed }}</td>
+            <td class="col-num col-win">{{ item.wins }}</td>
+            <td class="col-num col-loss">{{ item.losses }}</td>
+            <td class="col-num col-wr">{{ item.winRate }}%</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- All matches -->
@@ -192,12 +205,25 @@ const standings = computed(() => {
     }
   }
 
-  return Object.values(playerStats)
-    .filter((s) => s.gamesPlayed > 0)
+  const list = Object.values(playerStats)
     .map((s) => ({
       ...s,
       winRate: s.gamesPlayed > 0 ? Math.round((s.wins / s.gamesPlayed) * 100) : 0,
     }))
+
+  const hasScores = list.some((s) => s.gamesPlayed > 0)
+
+  if (!hasScores) {
+    // No scores yet — show all players in random order
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]]
+    }
+    return list
+  }
+
+  return list
+    .filter((s) => s.gamesPlayed > 0)
     .sort((a, b) => {
       if (b.wins !== a.wins) return b.wins - a.wins
       if (b.winRate !== a.winRate) return b.winRate - a.winRate
@@ -278,60 +304,82 @@ function confirmReopen() {
   color: var(--text-primary);
 }
 
-/* Standings */
-.standings {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* Standings table */
+.standings-table-wrap {
+  background: var(--card-bg);
+  border-radius: 12px;
+  overflow: hidden;
   margin-bottom: 24px;
 }
 
-.standing-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--card-bg);
-  padding: 12px;
-  border-radius: 10px;
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
 }
 
-.standing-gold { background: #fff8e1; }
-.standing-silver { background: #ddf1ff; }
-.standing-bronze { background: #fff3e0; }
+.standings-table th {
+  background: var(--tag-bg);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 8px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
 
-.standing-rank {
+.standings-table td {
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.standings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.col-rank {
   width: 28px;
-  font-size: 16px;
+  text-align: center !important;
   font-weight: 700;
   color: var(--text-secondary);
-  text-align: center;
 }
 
-.standing-gold .standing-rank { color: #f59e0b; }
-.standing-silver .standing-rank { color: #6cb9ef; }
-.standing-bronze .standing-rank { color: #d97706; }
-
-.standing-info {
-  flex: 1;
-}
-
-.standing-name {
-  display: block;
-  font-size: 15px;
+.col-name {
   font-weight: 600;
-  color: var(--text-primary);
 }
 
-.standing-detail {
-  font-size: 12px;
-  color: var(--text-secondary);
+.col-num {
+  width: 36px;
+  text-align: center !important;
+  font-variant-numeric: tabular-nums;
 }
 
-.standing-games {
-  font-size: 14px;
+.col-win {
+  color: var(--green);
   font-weight: 600;
-  color: var(--text-primary);
 }
+
+.col-loss {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.col-wr {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* Podium highlight */
+.row-gold td { background: #fff8e1; }
+.row-silver td { background: #e8f4fd; }
+.row-bronze td { background: #fff3e0; }
+
+.row-gold .col-rank { color: #f59e0b; }
+.row-silver .col-rank { color: #6cb9ef; }
+.row-bronze .col-rank { color: #d97706; }
 
 /* Matches */
 .matches {
