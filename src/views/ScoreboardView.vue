@@ -43,7 +43,7 @@
           >
             <td class="col-rank">{{ idx + 1 }}</td>
             <td class="col-name">{{ item.name }}</td>
-            <td class="col-num">{{ item.gamesPlayed }}/{{ targetGames }}</td>
+            <td class="col-num">{{ item.gamesPlayed }}/{{ item.totalGames }}</td>
             <td class="col-num col-win">{{ item.wins }}</td>
             <td class="col-num col-loss">{{ item.losses }}</td>
             <td class="col-num col-wr">{{ item.winRate }}%</td>
@@ -131,11 +131,22 @@ const { getGame, updateGame } = useStorage()
 const showReopenConfirm = ref(false)
 const game = computed(() => getGame(props.gameId))
 
-// Target games per player: total slots (rounds × courts × 4) ÷ player count.
-// Same formula as RotationView so both screens agree.
-const targetGames = computed(() =>
-  Math.round((game.value?.rounds.length || 0) * (game.value?.numCourts || 0) * 4 / (game.value?.players.length || 1))
-)
+// Total games each player is scheduled for in the rotation.
+// Counted from round assignments (not scores) — can differ per player
+// because the algorithm always leaves someone resting per round.
+const rotationTotals = computed(() => {
+  const totals = {}
+  if (!game.value) return totals
+  game.value.players.forEach((p) => { totals[p.id] = 0 })
+  for (const round of game.value.rounds) {
+    for (const court of round.courts) {
+      for (const id of [...court.pair1, ...court.pair2]) {
+        if (totals[id] !== undefined) totals[id]++
+      }
+    }
+  }
+  return totals
+})
 
 function formatDate(iso) {
   if (!iso) return ''
@@ -183,7 +194,7 @@ const standings = computed(() => {
   const playerStats = {}
 
   game.value.players.forEach((p) => {
-    playerStats[p.id] = { id: p.id, name: p.name, wins: 0, losses: 0, gamesPlayed: 0 }
+    playerStats[p.id] = { id: p.id, name: p.name, wins: 0, losses: 0, gamesPlayed: 0, totalGames: rotationTotals.value[p.id] || 0 }
   })
 
   for (const round of game.value.rounds) {
