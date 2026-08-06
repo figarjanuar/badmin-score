@@ -43,7 +43,7 @@
           >
             <td class="col-rank">{{ idx + 1 }}</td>
             <td class="col-name">{{ item.name }}</td>
-            <td class="col-num">{{ item.gamesPlayed }}</td>
+            <td class="col-num">{{ item.gamesPlayed }}/{{ targetGames }}</td>
             <td class="col-num col-win">{{ item.wins }}</td>
             <td class="col-num col-loss">{{ item.losses }}</td>
             <td class="col-num col-wr">{{ item.winRate }}%</td>
@@ -130,6 +130,12 @@ const emit = defineEmits(['navigate', 'back'])
 const { getGame, updateGame } = useStorage()
 const showReopenConfirm = ref(false)
 const game = computed(() => getGame(props.gameId))
+
+// Target games per player: total slots (rounds × courts × 4) ÷ player count.
+// Same formula as RotationView so both screens agree.
+const targetGames = computed(() =>
+  Math.round((game.value?.rounds.length || 0) * (game.value?.numCourts || 0) * 4 / (game.value?.players.length || 1))
+)
 
 function formatDate(iso) {
   if (!iso) return ''
@@ -352,7 +358,7 @@ function confirmReopen() {
 }
 
 .col-num {
-  width: 36px;
+  width: 44px;
   text-align: center !important;
   font-variant-numeric: tabular-nums;
 }
