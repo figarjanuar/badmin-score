@@ -27,11 +27,22 @@
       </div>
     </div>
 
-    <!-- Round navigation -->
-    <div class="round-nav">
-      <button class="nav-btn" @click="prevRound" :disabled="currentRound === 0">◀</button>
-      <span class="round-label">Ronde {{ currentRound + 1 }}/{{ totalRounds }}</span>
-      <button class="nav-btn" @click="nextRound" :disabled="currentRound >= totalRounds - 1">▶</button>
+    <!-- Round navigation: horizontal scroll -->
+    <div
+      class="round-nav-scroll"
+      ref="roundNavRef"
+      :class="{ 'fade-left': scrollLeftHint, 'fade-right': scrollRightHint }"
+      @scroll="updateScrollHints"
+    >
+      <button
+        v-for="(r, i) in game?.rounds || []"
+        :key="r.num"
+        class="round-chip"
+        :class="{ active: i === currentRound }"
+        @click="currentRound = i"
+      >
+        Ronde {{ i + 1 }}
+      </button>
     </div>
 
     <!-- Court cards for current round -->
@@ -135,7 +146,7 @@
 <!-- Actions -->
     <div class="rotation-actions">
       <button
-        v-if="!game?.completed"
+        v-if="!game?.completed && currentRound === totalRounds - 1"
         class="btn btn-outline btn-full"
         @click="requestAddRound"
       >
@@ -202,7 +213,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
 import { pushGame } from '../composables/useFirestore.js'
 import { generateNextRound } from '../composables/useRotation.js'
@@ -236,6 +247,9 @@ const targetGames = computed(() =>
   Math.round(totalRounds.value * game.value?.numCourts * 4 / (game.value?.players.length || 1))
 )
 const round = computed(() => game.value?.rounds[currentRound.value] || null)
+const roundNavRef = ref(null)
+const scrollLeftHint = ref(false)
+const scrollRightHint = ref(false)
 
 const editCourtData = computed(() => {
   if (!editCourt.value || !round.value) return null
@@ -246,13 +260,27 @@ function playerName(id) {
   return game.value?.players.find((p) => p.id === id)?.name || `P${id}`
 }
 
-function prevRound() {
-  if (currentRound.value > 0) currentRound.value--
+// Show fade hints on the strip edges only when there is content cut off
+function updateScrollHints() {
+  const el = roundNavRef.value
+  if (!el) return
+  scrollLeftHint.value = el.scrollLeft > 2
+  scrollRightHint.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
 }
 
-function nextRound() {
-  if (currentRound.value < totalRounds.value - 1) currentRound.value++
+// Keep the active round chip visible in the horizontal scroll strip
+function scrollActiveRoundIntoView() {
+  nextTick(() => {
+    const el = roundNavRef.value?.querySelector('.round-chip.active')
+    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    updateScrollHints()
+  })
 }
+
+watch(currentRound, scrollActiveRoundIntoView)
+
+// Re-evaluate hints when rounds are added/removed (strip may become scrollable)
+watch(totalRounds, () => nextTick(updateScrollHints))
 
 function openEditModal(courtNum) {
   editCourt.value = courtNum
@@ -362,8 +390,13 @@ function confirmAddRound() {
 // --- Real-time subscription ---
 
 let unsubscribe = null
+let resizeObserver = null
 
 onMounted(() => {
+  updateScrollHints()
+  resizeObserver = new ResizeObserver(updateScrollHints)
+  if (roundNavRef.value) resizeObserver.observe(roundNavRef.value)
+
   // Subscribe to Firestore for real-time sync if game is already shared
   if (window.location.hash.includes(`#/match/${props.gameId}`)) {
     unsubscribe = subscribeToGame(props.gameId)
@@ -371,6 +404,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (unsubscribe) {
     unsubscribe()
     unsubscribe = null
@@ -407,35 +444,58 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-/* Round nav */
-.round-nav {
+/* Round nav: horizontal scroll strip */
+.round-nav-scroll {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-bottom: 12px;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+  margin-bottom: 10px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
 }
 
-.nav-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+.round-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fade hints on the edges: show only while there is more content cut off */
+.round-nav-scroll.fade-right {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+}
+
+.round-nav-scroll.fade-left {
+  -webkit-mask-image: linear-gradient(to left, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to left, black calc(100% - 24px), transparent 100%);
+}
+
+.round-nav-scroll.fade-left.fade-right {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
+}
+
+.round-chip {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  padding: 8px 16px;
+  border-radius: 20px;
   border: 1px solid var(--border);
   background: var(--card-bg);
   color: var(--text-primary);
-  font-size: 18px;
-  cursor: pointer;
-}
-
-.nav-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.round-label {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.round-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
 }
 
 /* Play count chips */

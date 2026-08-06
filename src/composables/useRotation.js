@@ -25,7 +25,7 @@ function groupPairs(group) {
   return pairs
 }
 
-function bestCourtGroup(candidates, encounterCounts, gameCounts, consecutivePlays) {
+function bestCourtGroup(candidates, encounterCounts, gameCounts, consecutivePlays, playCountWeight = 0) {
   let best = null
   let bestScore = Infinity
 
@@ -50,7 +50,15 @@ function bestCourtGroup(candidates, encounterCounts, gameCounts, consecutivePlay
               }, 0)
             : 0
 
-          const score = maxEncounter * 100000 + totalEncounter * 1000 + playSpread + consecutivePenalty
+          // Penalise the group's total play count (absolute level, not just
+          // spread). Used when adding rounds so players who played the fewest
+          // games get priority. Weight is higher than the consecutive penalty
+          // so a 1-game difference outweighs any encounter trade-off.
+          const playCountPenalty = playCountWeight
+            ? group.reduce((sum, id) => sum + (gameCounts.get(id) || 0), 0) * playCountWeight
+            : 0
+
+          const score = maxEncounter * 100000 + totalEncounter * 1000 + playSpread + consecutivePenalty + playCountPenalty
           if (score < bestScore) {
             bestScore = score
             best = group
@@ -110,7 +118,7 @@ export function estimateRoundsCompletePartner(numCourts, totalPlayers) {
   return Math.max(1, Math.floor(totalPairs / pairsPerRound))
 }
 
-function buildRounds(numCourts, playerIds, rounds, initialGameCounts, initialEncounterCounts, initialPartnershipCounts, initialConsecutivePlays) {
+function buildRounds(numCourts, playerIds, rounds, initialGameCounts, initialEncounterCounts, initialPartnershipCounts, initialConsecutivePlays, playCountWeight = 0) {
   const gameCounts = initialGameCounts || new Map()
   if (!initialGameCounts) {
     playerIds.forEach((id) => gameCounts.set(id, 0))
@@ -135,7 +143,7 @@ function buildRounds(numCourts, playerIds, rounds, initialGameCounts, initialEnc
     for (let c = 0; c < numCourts; c++) {
       if (available.length < 4) break
 
-      const group = bestCourtGroup(available, encounterCounts, gameCounts, consecutivePlays)
+      const group = bestCourtGroup(available, encounterCounts, gameCounts, consecutivePlays, playCountWeight)
       if (!group) break
 
       for (const id of group) {
@@ -359,6 +367,10 @@ function greedyMatch(edges, target, retries) {
   return null
 }
 
+// When adding a round, game-count balance is the top priority: players who
+// played the fewest games get picked first, even if that repeats an encounter.
+const ADD_ROUND_BALANCE_WEIGHT = 10_000_000
+
 /**
  * Generate a single additional round continuing from existing game state.
  * Reconstructs tracking maps (gameCounts, encounterCounts, partnershipCounts,
@@ -412,7 +424,7 @@ export function generateNextRound(game) {
     }
   }
 
-  const result = buildRounds(numCourts, playerIds, 1, gameCounts, encounterCounts, partnershipCounts, consecutivePlays)
+  const result = buildRounds(numCourts, playerIds, 1, gameCounts, encounterCounts, partnershipCounts, consecutivePlays, ADD_ROUND_BALANCE_WEIGHT)
 
   if (!result.roundsData || result.roundsData.length === 0) return null
 
