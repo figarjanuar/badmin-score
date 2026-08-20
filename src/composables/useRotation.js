@@ -372,6 +372,127 @@ function greedyMatch(edges, target, retries) {
 const ADD_ROUND_BALANCE_WEIGHT = 10_000_000
 
 /**
+ * Rebuilds the fairness-tracking maps (gameCounts, encounterCounts,
+ * partnershipCounts, consecutivePlays) from a set of existing rounds.
+ *
+ * Only ids present in `activeIdSet` are seeded/tracked — stale or removed
+ * player ids are ignored entirely (fixes NaN propagation when a deleted
+ * player's id still appears in old rounds). Pairwise stats are only counted
+ * for pairs where BOTH players are active, since pairs involving a removed
+ * player can never recur.
+ *
+ * @param {Array} rounds - existing round objects
+ * @param {Set<number>} activeIdSet - ids of players still in the rotation
+ */
+function rebuildTrackingMaps(rounds, activeIdSet) {
+  const gameCounts = new Map()
+  const encounterCounts = new Map()
+  const partnershipCounts = new Map()
+  const consecutivePlays = new Map()
+
+  activeIdSet.forEach((id) => {
+    gameCounts.set(id, 0)
+    consecutivePlays.set(id, 0)
+  })
+
+  for (const round of rounds) {
+    const playing = new Set()
+
+    for (const court of round.courts) {
+      const group = [...court.pair1, ...court.pair2].filter((id) => activeIdSet.has(id))
+      group.forEach((id) => playing.add(id))
+
+      for (const [p1, p2] of groupPairs(group)) {
+        const key = pairKey(p1, p2)
+        encounterCounts.set(key, (encounterCounts.get(key) || 0) + 1)
+      }
+
+      if (activeIdSet.has(court.pair1[0]) && activeIdSet.has(court.pair1[1])) {
+        const k1 = pairKey(court.pair1[0], court.pair1[1])
+        partnershipCounts.set(k1, (partnershipCounts.get(k1) || 0) + 1)
+      }
+      if (activeIdSet.has(court.pair2[0]) && activeIdSet.has(court.pair2[1])) {
+        const k2 = pairKey(court.pair2[0], court.pair2[1])
+        partnershipCounts.set(k2, (partnershipCounts.get(k2) || 0) + 1)
+      }
+
+      group.forEach((id) => gameCounts.set(id, gameCounts.get(id) + 1))
+    }
+
+    // Reconstruct consecutive plays from existing rounds
+    for (const id of activeIdSet) {
+      if (playing.has(id)) {
+        consecutivePlays.set(id, (consecutivePlays.get(id) || 0) + 1)
+      } else {
+        consecutivePlays.set(id, 0)
+      }
+    }
+  }
+
+  return { gameCounts, encounterCounts, partnershipCounts, consecutivePlays }
+}
+
+/**
+ * Counts how many leading rounds must be kept untouched when players change:
+ * every round up to and including the current round AND the last round that
+ * contains any entered score is preserved; only rounds after that get
+ * regenerated. Guarantees scores never desync from lineups and the round the
+ * user is currently viewing never changes beneath them.
+ *
+ * @param {Array} rounds - round objects
+ * @param {number} currentRoundIndex - round index the user is viewing
+ * @returns {number} number of leading rounds to keep (0..rounds.length)
+ */
+export function computeKeptCount(rounds, currentRoundIndex) {
+  let lastScored = -1
+  rounds.forEach((r, i) => {
+    if (r.courts.some((c) => c.score1 !== null || c.score2 !== null)) lastScored = i
+  })
+  return Math.min(rounds.length, Math.max(currentRoundIndex, lastScored) + 1)
+}
+
+/**
+ * Regenerates the remaining (unkept) rounds after a player change, continuing
+ * from the fairness state of the kept prefix. Kept rounds (with their scores)
+ * are returned byte-identical; regenerated rounds get sequential nums and
+ * null scores. Known limitation: for `completePartner` games the regenerated
+ * tail uses the americano continuation (buildRounds) rather than the strict
+ * complete-partner pairing — past rounds and score integrity are preserved.
+ *
+ * @param {object} game - current game object
+ * @param {Array<number>} activePlayerIds - ids of players in the new rotation
+ * @param {number} currentRoundIndex - round index the user is viewing
+ * @returns {object|null} { rounds, regeneratedFrom } or null when the active
+ *   pool is too small to fill the courts
+ */
+export function regenerateRemainingRounds(game, activePlayerIds, currentRoundIndex) {
+  if (activePlayerIds.length < game.numCourts * 4) return null
+
+  const keptCount = computeKeptCount(game.rounds, currentRoundIndex)
+  const kept = game.rounds.slice(0, keptCount)
+  const remaining = game.rounds.length - keptCount
+
+  if (remaining <= 0) {
+    return { rounds: kept, regeneratedFrom: keptCount }
+  }
+
+  const seeds = rebuildTrackingMaps(kept, new Set(activePlayerIds))
+  const result = buildRounds(
+    game.numCourts,
+    activePlayerIds,
+    remaining,
+    seeds.gameCounts,
+    seeds.encounterCounts,
+    seeds.partnershipCounts,
+    seeds.consecutivePlays,
+    0
+  )
+
+  const newRounds = result.roundsData.map((r, i) => ({ ...r, num: keptCount + i + 1 }))
+  return { rounds: [...kept, ...newRounds], regeneratedFrom: keptCount }
+}
+
+/**
  * Generate a single additional round continuing from existing game state.
  * Reconstructs tracking maps (gameCounts, encounterCounts, partnershipCounts,
  * consecutivePlays) from existing rounds so the new round respects the same
@@ -380,49 +501,12 @@ const ADD_ROUND_BALANCE_WEIGHT = 10_000_000
  * @returns {object|null} new round object (num set to rounds.length + 1), or null if generation fails
  */
 export function generateNextRound(game) {
-  const playerIds = game.players.map((p) => p.id)
+  const playerIds = game.players.filter((p) => !p.inactive).map((p) => p.id)
   const numCourts = game.numCourts
 
-  // Reconstruct tracking maps from all existing rounds
-  const gameCounts = new Map()
-  const encounterCounts = new Map()
-  const partnershipCounts = new Map()
-  const consecutivePlays = new Map()
+  if (playerIds.length < numCourts * 4) return null
 
-  playerIds.forEach((id) => {
-    gameCounts.set(id, 0)
-    consecutivePlays.set(id, 0)
-  })
-
-  for (const round of game.rounds) {
-    const playing = new Set()
-
-    for (const court of round.courts) {
-      const group = [...court.pair1, ...court.pair2]
-      group.forEach((id) => playing.add(id))
-
-      for (const [p1, p2] of groupPairs(group)) {
-        const key = pairKey(p1, p2)
-        encounterCounts.set(key, (encounterCounts.get(key) || 0) + 1)
-      }
-
-      const k1 = pairKey(court.pair1[0], court.pair1[1])
-      const k2 = pairKey(court.pair2[0], court.pair2[1])
-      partnershipCounts.set(k1, (partnershipCounts.get(k1) || 0) + 1)
-      partnershipCounts.set(k2, (partnershipCounts.get(k2) || 0) + 1)
-
-      group.forEach((id) => gameCounts.set(id, gameCounts.get(id) + 1))
-    }
-
-    // Reconstruct consecutive plays from existing rounds
-    for (const id of playerIds) {
-      if (playing.has(id)) {
-        consecutivePlays.set(id, (consecutivePlays.get(id) || 0) + 1)
-      } else {
-        consecutivePlays.set(id, 0)
-      }
-    }
-  }
+  const { gameCounts, encounterCounts, partnershipCounts, consecutivePlays } = rebuildTrackingMaps(game.rounds, new Set(playerIds))
 
   const result = buildRounds(numCourts, playerIds, 1, gameCounts, encounterCounts, partnershipCounts, consecutivePlays, ADD_ROUND_BALANCE_WEIGHT)
 

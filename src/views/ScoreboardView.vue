@@ -23,34 +23,7 @@
 
     <!-- Player standings table -->
     <h3 class="section-title">🏆 Klasemen</h3>
-    <div class="standings-table-wrap">
-      <table class="standings-table">
-        <thead>
-          <tr>
-            <th class="col-rank">#</th>
-            <th class="col-name">Nama</th>
-            <th class="col-num">M</th>
-            <th class="col-num">W</th>
-            <th class="col-num">L</th>
-            <th class="col-num">WR</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="(item, idx) in standings"
-            :key="item.id"
-            :class="{ 'row-gold': idx === 0 && item.gamesPlayed > 0, 'row-silver': idx === 1 && item.gamesPlayed > 0, 'row-bronze': idx === 2 && item.gamesPlayed > 0 }"
-          >
-            <td class="col-rank">{{ idx + 1 }}</td>
-            <td class="col-name">{{ item.name }}</td>
-            <td class="col-num">{{ item.gamesPlayed }}/{{ item.totalGames }}</td>
-            <td class="col-num col-win">{{ item.wins }}</td>
-            <td class="col-num col-loss">{{ item.losses }}</td>
-            <td class="col-num col-wr">{{ item.winRate }}%</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <StandingsTable :game-id="gameId" />
 
     <!-- All matches -->
     <h3 class="section-title">📋 Hasil Pertandingan</h3>
@@ -121,6 +94,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
+import { useStandings } from '../composables/useStandings.js'
+import StandingsTable from '../components/StandingsTable.vue'
 
 const props = defineProps({
   gameId: { type: String, required: true },
@@ -130,23 +105,7 @@ const emit = defineEmits(['navigate', 'back'])
 const { getGame, updateGame } = useStorage()
 const showReopenConfirm = ref(false)
 const game = computed(() => getGame(props.gameId))
-
-// Total games each player is scheduled for in the rotation.
-// Counted from round assignments (not scores) — can differ per player
-// because the algorithm always leaves someone resting per round.
-const rotationTotals = computed(() => {
-  const totals = {}
-  if (!game.value) return totals
-  game.value.players.forEach((p) => { totals[p.id] = 0 })
-  for (const round of game.value.rounds) {
-    for (const court of round.courts) {
-      for (const id of [...court.pair1, ...court.pair2]) {
-        if (totals[id] !== undefined) totals[id]++
-      }
-    }
-  }
-  return totals
-})
+const { playerMap, allMatches } = useStandings(game)
 
 function formatDate(iso) {
   if (!iso) return ''
@@ -159,94 +118,6 @@ function formatDate(iso) {
     minute: '2-digit',
   })
 }
-
-const playerMap = computed(() => {
-  const m = {}
-  if (game.value) {
-    game.value.players.forEach((p) => { m[p.id] = p.name })
-  }
-  return m
-})
-
-const allMatches = computed(() => {
-  if (!game.value) return []
-  const matches = []
-  for (const round of game.value.rounds) {
-    for (const court of round.courts) {
-      const pair1 = court.pair1.map((id) => playerMap.value[id] || `P${id}`)
-      const pair2 = court.pair2.map((id) => playerMap.value[id] || `P${id}`)
-      matches.push({
-        key: `R${round.num}C${court.court}`,
-        round: round.num,
-        court: court.court,
-        home: pair1.join(' / '),
-        away: pair2.join(' / '),
-        score1: court.score1,
-        score2: court.score2,
-      })
-    }
-  }
-  return matches
-})
-
-const standings = computed(() => {
-  if (!game.value) return []
-  const playerStats = {}
-
-  game.value.players.forEach((p) => {
-    playerStats[p.id] = { id: p.id, name: p.name, wins: 0, losses: 0, gamesPlayed: 0, totalGames: rotationTotals.value[p.id] || 0 }
-  })
-
-  for (const round of game.value.rounds) {
-    for (const court of round.courts) {
-      if (court.score1 === null || court.score2 === null) continue
-
-      const pair1 = court.pair1
-      const pair2 = court.pair2
-      const p1Won = court.score1 > court.score2
-
-      pair1.forEach((id) => {
-        if (playerStats[id]) {
-          playerStats[id].gamesPlayed++
-          if (p1Won) playerStats[id].wins++
-          else playerStats[id].losses++
-        }
-      })
-      pair2.forEach((id) => {
-        if (playerStats[id]) {
-          playerStats[id].gamesPlayed++
-          if (!p1Won) playerStats[id].wins++
-          else playerStats[id].losses++
-        }
-      })
-    }
-  }
-
-  const list = Object.values(playerStats)
-    .map((s) => ({
-      ...s,
-      winRate: s.gamesPlayed > 0 ? Math.round((s.wins / s.gamesPlayed) * 100) : 0,
-    }))
-
-  const hasScores = list.some((s) => s.gamesPlayed > 0)
-
-  if (!hasScores) {
-    // No scores yet — show all players in random order
-    for (let i = list.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [list[i], list[j]] = [list[j], list[i]]
-    }
-    return list
-  }
-
-  return list
-    .filter((s) => s.gamesPlayed > 0)
-    .sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins
-      if (b.winRate !== a.winRate) return b.winRate - a.winRate
-      return a.gamesPlayed - b.gamesPlayed
-    })
-})
 
 function confirmReopen() {
   updateGame(props.gameId, { completed: false })
@@ -321,82 +192,10 @@ function confirmReopen() {
   color: var(--text-primary);
 }
 
-/* Standings table */
+/* Standings table wrapper (component root) — spacing before matches list */
 .standings-table-wrap {
-  background: var(--card-bg);
-  border-radius: 12px;
-  overflow: hidden;
   margin-bottom: 24px;
 }
-
-.standings-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.standings-table th {
-  background: var(--tag-bg);
-  color: var(--text-secondary);
-  font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding: 8px 6px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-}
-
-.standings-table td {
-  padding: 7px 6px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-primary);
-}
-
-.standings-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.col-rank {
-  width: 28px;
-  text-align: center !important;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.col-name {
-  font-weight: 600;
-}
-
-.col-num {
-  width: 44px;
-  text-align: center !important;
-  font-variant-numeric: tabular-nums;
-}
-
-.col-win {
-  color: var(--green);
-  font-weight: 600;
-}
-
-.col-loss {
-  color: var(--danger);
-  font-weight: 600;
-}
-
-.col-wr {
-  font-weight: 700;
-  color: var(--primary);
-}
-
-/* Podium highlight */
-.row-gold td { background: #fff8e1; }
-.row-silver td { background: #e8f4fd; }
-.row-bronze td { background: #fff3e0; }
-
-.row-gold .col-rank { color: #f59e0b; }
-.row-silver .col-rank { color: #6cb9ef; }
-.row-bronze .col-rank { color: #d97706; }
 
 /* Matches */
 .matches {

@@ -1,0 +1,16 @@
+{
+  "name": "BadminScore — Tracker Skor Badminton",
+  "short_name": "BadminScore",
+  "description": "Tracker skor badminton: rotasi pemain yang adil, skor per lapangan, dan share match real-time.",
+  "lang": "id",
+  "start_url": "/badmin-score/",
+  "scope": "/badmin-score/",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "/badmin-score/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/badmin-score/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/badmin-score/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -44,6 +44,10 @@ src/
     ConfigView.vue              — setup game (nama, lapangan, pemain, generate jadwal)
     RotationView.vue            — tampilan live match: scoreboard +/- per lapangan
     ScoreboardView.vue          — klasemen + riwayat match (read-only)
+  public/
+    manifest.webmanifest        — PWA manifest (display: standalone) — wajib untuk installable
+    sw.js                       — service worker: cache shell + offline (didaftarkan di main.js, production only)
+    icon-192.png, icon-512.png  — ikon PWA (generate dari favicon.svg)
 ```
 
 ## Data Model

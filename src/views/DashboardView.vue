@@ -4,6 +4,9 @@
       <div class="app-icon">🏸</div>
       <h1>BadminScore</h1>
       <p class="subtitle">Atur jadwal main badminton dengan adil</p>
+      <button v-if="showInstallButton" class="btn btn-outline btn-install" @click="handleInstall">
+        📲 Pasang Aplikasi
+      </button>
     </div>
 
     <div v-if="games.length === 0" class="empty-state">
@@ -24,13 +27,6 @@
       >
         <div class="game-card-info">
           <div class="game-card-name">{{ game.name || 'Game ' + formatDate(game.createdAt) }}</div>
-          <div class="game-card-meta">
-            <span>{{ game.players.length }} pemain</span>
-            <span class="meta-dot">·</span>
-            <span>{{ game.numCourts }} lapangan</span>
-            <span class="meta-dot">·</span>
-            <span>{{ game.rounds.length }} ronde</span>
-          </div>
         </div>
         <div class="game-card-status">
           <span v-if="game.synced" class="badge badge-synced">☁️ Sync</span>
@@ -41,6 +37,26 @@
             title="Hapus game"
             @click.stop="askDelete(game)"
           >🗑️</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Install Help Modal (iOS) -->
+    <div v-if="showIosHelp" class="modal-overlay" @click.self="showIosHelp = false">
+      <div class="modal-container">
+        <div class="modal-header">
+          <h2 class="modal-title">📲 Pasang Aplikasi</h2>
+          <button class="modal-close" @click="showIosHelp = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <ol class="install-steps">
+            <li>Buka menu <strong>Bagikan</strong> (ikon ⬆️) di Safari</li>
+            <li>Pilih <strong>Add to Home Screen</strong></li>
+            <li>Tekan <strong>Add</strong> — BadminScore terpasang di layar utama</li>
+          </ol>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" @click="showIosHelp = false">Mengerti</button>
         </div>
       </div>
     </div>
@@ -78,9 +94,18 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
+import { usePwaInstall } from '../composables/usePwaInstall.js'
 
 const emit = defineEmits(['navigate'])
 const { getGames, deleteGame } = useStorage()
+
+const { showInstallButton, install } = usePwaInstall()
+const showIosHelp = ref(false)
+
+function handleInstall() {
+  // Chrome/Edge langsung prompt; iOS tidak punya prompt → tampilkan instruksi
+  if (!install()) showIosHelp.value = true
+}
 
 const games = computed(() => getGames())
 
@@ -136,6 +161,20 @@ function formatDate(iso) {
   color: var(--text-secondary);
   margin: 4px 0 0;
   font-size: 14px;
+}
+
+.btn-install {
+  margin-top: 16px;
+  font-size: 14px;
+  padding: 10px 20px;
+}
+
+.install-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.9;
 }
 
 /* Empty state */
