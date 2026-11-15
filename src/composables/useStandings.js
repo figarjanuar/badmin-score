@@ -44,6 +44,7 @@ export function useStandings(game) {
         inactive: !!p.inactive,
         wins: 0,
         losses: 0,
+        pointDiff: 0,
         gamesPlayed: 0,
         totalGames: rotationTotals.value[p.id] || 0,
       }
@@ -56,19 +57,23 @@ export function useStandings(game) {
         const pair1 = court.pair1
         const pair2 = court.pair2
         const p1Won = court.score1 > court.score2
+        const p2Won = court.score2 > court.score1
+        const pointDiff = court.score1 - court.score2
 
         pair1.forEach((id) => {
           if (playerStats[id]) {
             playerStats[id].gamesPlayed++
+            playerStats[id].pointDiff += pointDiff
             if (p1Won) playerStats[id].wins++
-            else playerStats[id].losses++
+            else if (p2Won) playerStats[id].losses++
           }
         })
         pair2.forEach((id) => {
           if (playerStats[id]) {
             playerStats[id].gamesPlayed++
-            if (!p1Won) playerStats[id].wins++
-            else playerStats[id].losses++
+            playerStats[id].pointDiff -= pointDiff
+            if (p2Won) playerStats[id].wins++
+            else if (p1Won) playerStats[id].losses++
           }
         })
       }
@@ -95,6 +100,7 @@ export function useStandings(game) {
       .filter((s) => s.gamesPlayed > 0)
       .sort((a, b) => {
         if (b.wins !== a.wins) return b.wins - a.wins
+        if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff
         if (b.winRate !== a.winRate) return b.winRate - a.winRate
         return a.gamesPlayed - b.gamesPlayed
       })

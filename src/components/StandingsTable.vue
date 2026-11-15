@@ -8,6 +8,7 @@
           <th class="col-num">M</th>
           <th class="col-num">W</th>
           <th class="col-num">L</th>
+          <th class="col-num" title="Selisih poin: poin dicetak dikurangi poin kemasukan">Diff</th>
           <th class="col-num">WR</th>
         </tr>
       </thead>
@@ -27,10 +28,12 @@
           <td class="col-num">{{ item.gamesPlayed }}/{{ item.totalGames }}</td>
           <td class="col-num col-win">{{ item.wins }}</td>
           <td class="col-num col-loss">{{ item.losses }}</td>
+          <td class="col-num">{{ item.pointDiff > 0 ? '+' : '' }}{{ item.pointDiff }}</td>
           <td class="col-num col-wr">{{ item.winRate }}%</td>
         </tr>
       </tbody>
     </table>
+    <p class="standings-note">Diff = poin dicetak − poin kemasukan. Urutan: menang, Diff, lalu WR.</p>
   </div>
 </template>
 
@@ -52,7 +55,7 @@ const { standings } = useStandings(game)
 .standings-table-wrap {
   background: var(--card-bg);
   border-radius: 12px;
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .standings-table {
@@ -113,6 +116,14 @@ const { standings } = useStandings(game)
 .col-wr {
   font-weight: 700;
   color: var(--primary);
+}
+
+.standings-note {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* Podium highlight */
