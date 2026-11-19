@@ -13,7 +13,7 @@
       <div class="empty-icon">🏸</div>
       <p class="empty-text">Belum ada game nih!</p>
       <p class="empty-hint">Buat game baru dan atur rotasi pemain dengan adil</p>
-      <button class="btn btn-primary btn-large" @click="$emit('navigate', 'config')">
+      <button class="btn btn-primary btn-large" @click="router.push({ name: 'config' })">
         ➕ Buat Game Baru
       </button>
     </div>
@@ -84,7 +84,8 @@
     <button
       v-if="games.length > 0"
       class="fab"
-      @click="$emit('navigate', 'config')"
+      aria-label="Buat Game Baru"
+      @click="router.push({ name: 'config' })"
     >
       ➕
     </button>
@@ -93,10 +94,11 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
 
-const emit = defineEmits(['navigate'])
+const router = useRouter()
 const { getGames, deleteGame } = useStorage()
 
 const { showInstallButton, install } = usePwaInstall()
@@ -115,7 +117,7 @@ const gameToDelete = ref(null)
 function openGame(id) {
   const game = getGames().find((g) => g.id === id)
   const view = game?.completed ? 'scoreboard' : 'rotation'
-  emit('navigate', view, id)
+  router.push({ name: view, params: { gameId: id } })
 }
 
 function askDelete(game) {

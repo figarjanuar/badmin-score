@@ -1,8 +1,10 @@
-function generateId() {
+import { getMatchSets, hasSetScore } from './matchScores.js'
+
+export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 }
 
-function shuffle(arr) {
+export function shuffle(arr) {
   const a = [...arr]
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
@@ -446,7 +448,7 @@ function rebuildTrackingMaps(rounds, activeIdSet) {
 export function computeKeptCount(rounds, currentRoundIndex) {
   let lastScored = -1
   rounds.forEach((r, i) => {
-    if (r.courts.some((c) => c.score1 !== null || c.score2 !== null)) lastScored = i
+    if (r.courts.some((c) => getMatchSets(c).some(hasSetScore) || c.extraSets?.length)) lastScored = i
   })
   return Math.min(rounds.length, Math.max(currentRoundIndex, lastScored) + 1)
 }

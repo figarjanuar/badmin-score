@@ -20,7 +20,7 @@
         <button
           v-else
           class="btn btn-outline btn-sm"
-          @click="$emit('navigate', 'scoreboard', gameId)"
+          @click="openScoreboard"
         >
           🏆 Scoreboard
         </button>
@@ -43,7 +43,7 @@
         :class="{ active: i === currentRound }"
         @click="currentRound = i"
       >
-        Ronde {{ i + 1 }}
+        {{ isSingleCourtClub ? 'Match' : 'Ronde' }} {{ i + 1 }}
       </button>
     </div>
 
@@ -55,92 +55,68 @@
         class="court-card"
       >
         <div class="court-header">
-          <span>Lapangan {{ court.court }}</span>
-          <button class="court-edit-btn" @click="openEditModal(court.court)" title="Edit skor manual">✏️</button>
+          <span>{{ isSingleCourtClub ? 'Match ' + round.num : 'Lapangan ' + court.court }}</span>
+          <button v-if="!game.completed" class="add-set-btn" @click="addSet(court.court)">+ Set</button>
         </div>
 
-        <!-- Inline Scoreboard -->
         <div class="court-scoreboard">
-          <!-- Team 1 (Home) -->
-          <div class="sb-team">
-            <div class="sb-players">
-              <span v-for="pid in court.pair1" :key="pid" class="sb-player-name">{{ playerName(pid) }}</span>
-            </div>
-            <div class="sb-score-controls">
-              <button
-                class="sb-btn sb-minus"
-                @click="adjustScore(court.court, 1, -1)"
-                :disabled="game?.completed"
-              >−</button>
-
-              <!-- Inline edit or display -->
-              <span
-                v-if="editingCourt !== court.court || editingSide !== 1"
-                class="sb-score"
-                @click="startInlineEdit(court.court, 1)"
-              >{{ court.score1 ?? 0 }}</span>
-              <input
-                v-else
-                ref="inlineInput"
-                type="number"
-                class="sb-score-input"
-                v-model.number="inlineScore"
-                @blur="commitInlineEdit(court.court, 1)"
-                @keyup.enter="commitInlineEdit(court.court, 1)"
-                min="0"
-                max="99"
-                inputmode="numeric"
-              />
-
-              <button
-                class="sb-btn sb-plus"
-                @click="adjustScore(court.court, 1, 1)"
-                :disabled="game?.completed"
-              >+</button>
-            </div>
+          <div class="score-row">
+            <template v-for="(pair, sideIndex) in [court.pair1, court.pair2]" :key="sideIndex">
+              <span v-if="sideIndex === 1" class="sb-vs">VS</span>
+              <div class="sb-players">
+                <strong v-if="isClub" class="sb-club-name">{{ clubByPlayer.get(pair[0])?.name }}</strong>
+                <span v-for="pid in pair" :key="pid" class="sb-player-name">{{ playerName(pid) }}</span>
+              </div>
+            </template>
           </div>
 
-          <!-- VS divider -->
-          <div class="sb-vs">VS</div>
-
-          <!-- Team 2 (Away) -->
-          <div class="sb-team">
-            <div class="sb-players">
-              <span v-for="pid in court.pair2" :key="pid" class="sb-player-name">{{ playerName(pid) }}</span>
-            </div>
-            <div class="sb-score-controls">
+          <section v-for="(set, setIndex) in getMatchSets(court)" :key="set.id ?? 0" class="court-set" :aria-label="'Set ' + (setIndex + 1)">
+            <div v-if="court.extraSets?.length" class="court-set-heading">
+              <strong>Set {{ setIndex + 1 }}</strong>
               <button
-                class="sb-btn sb-minus"
-                @click="adjustScore(court.court, 2, -1)"
-                :disabled="game?.completed"
-              >−</button>
-
-              <!-- Inline edit or display -->
-              <span
-                v-if="editingCourt !== court.court || editingSide !== 2"
-                class="sb-score"
-                @click="startInlineEdit(court.court, 2)"
-              >{{ court.score2 ?? 0 }}</span>
-              <input
-                v-else
-                ref="inlineInput"
-                type="number"
-                class="sb-score-input"
-                v-model.number="inlineScore"
-                @blur="commitInlineEdit(court.court, 2)"
-                @keyup.enter="commitInlineEdit(court.court, 2)"
-                min="0"
-                max="99"
-                inputmode="numeric"
-              />
-
-              <button
-                class="sb-btn sb-plus"
-                @click="adjustScore(court.court, 2, 1)"
-                :disabled="game?.completed"
-              >+</button>
+                v-if="setIndex > 0 && !hasSetScore(set) && !game.completed"
+                class="remove-set-btn"
+                @click="removeSet(court.court, set.id)"
+              >Hapus set</button>
             </div>
-          </div>
+
+            <div class="score-row">
+              <div v-for="side in scoreSides" :key="side" class="sb-score-controls">
+                <button
+                  class="sb-btn sb-minus"
+                  :aria-label="'Kurangi skor pasangan ' + (side === 'score1' ? 1 : 2)"
+                  :disabled="game.completed"
+                  @click="adjustScore(court.court, set.id ?? null, side, -1)"
+                >−</button>
+                <input
+                  v-if="isEditing(court.court, set.id ?? null, side)"
+                  ref="inlineInput"
+                  v-model.number="inlineScore"
+                  type="number"
+                  min="0"
+                  inputmode="numeric"
+                  placeholder="0"
+                  :aria-label="'Skor pasangan ' + (side === 'score1' ? 1 : 2)"
+                  class="sb-score-input"
+                  @blur="commitInlineEdit"
+                  @keyup.enter="$event.target.blur()"
+                />
+                <button
+                  v-else
+                  class="sb-score"
+                  :aria-label="'Edit skor pasangan ' + (side === 'score1' ? 1 : 2) + ', ' + (set[side] ?? 0)"
+                  :disabled="game.completed"
+                  @click="startInlineEdit(court.court, set, side)"
+                >{{ set[side] ?? 0 }}</button>
+                <button
+                  class="sb-btn sb-plus"
+                  :aria-label="'Tambah skor pasangan ' + (side === 'score1' ? 1 : 2)"
+                  :disabled="game.completed"
+                  @click="adjustScore(court.court, set.id ?? null, side, 1)"
+                >+</button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -148,7 +124,7 @@
 <!-- Actions -->
     <div class="rotation-actions">
       <button
-        v-if="!game?.completed && currentRound === totalRounds - 1"
+        v-if="!isClub && !game?.completed && currentRound === totalRounds - 1"
         class="btn btn-outline btn-full"
         @click="requestAddRound"
       >
@@ -160,18 +136,21 @@
     <!-- PEMAIN pane: edit players mid-game -->
     <div v-show="activeTab === 'pemain'" class="tab-pane">
       <h3 class="section-title">👥 Pemain Aktif ({{ activePlayers.length }})</h3>
-      <div class="player-list">
-        <div v-for="(p, idx) in activePlayers" :key="p.id" class="player-row">
+      <div v-for="group in playerGroups" :key="group.id" class="player-list">
+        <h4 v-if="group.label" class="player-group-label">{{ group.label }}</h4>
+        <div v-for="(p, idx) in group.players" :key="p.id" class="player-row">
           <span class="player-num">{{ idx + 1 }}</span>
           <input
             class="input player-input"
             :value="p.name"
             :placeholder="'Pemain ' + (idx + 1)"
+            :aria-label="(group.label ? group.label + ' · ' : '') + 'Pemain ' + (idx + 1)"
             :disabled="game?.completed"
             @blur="renamePlayer(p.id, $event.target.value)"
             @keyup.enter="$event.target.blur()"
           />
           <button
+            v-if="!isClub"
             class="btn-icon"
             :disabled="game?.completed || activePlayers.length <= minPlayers"
             @click="requestDelete(p)"
@@ -180,17 +159,17 @@
         </div>
       </div>
       <button
-        v-if="!game?.completed"
+        v-if="!isClub && !game?.completed"
         class="btn btn-outline btn-full"
         @click="openAddPlayer"
       >
         ➕ Tambah Pemain
       </button>
-      <p v-if="activePlayers.length <= minPlayers" class="error-hint">
+      <p v-if="!isClub && activePlayers.length <= minPlayers" class="error-hint">
         Minimal {{ minPlayers }} pemain untuk {{ game?.numCourts }} lapangan
       </p>
 
-      <div v-if="inactivePlayers.length" class="inactive-section">
+      <div v-if="!isClub && inactivePlayers.length" class="inactive-section">
         <h4 class="section-title">💤 Pemain Keluar ({{ inactivePlayers.length }})</h4>
         <div v-for="p in inactivePlayers" :key="p.id" class="player-row row-inactive">
           <span class="player-num">—</span>
@@ -209,7 +188,7 @@
 
     <!-- KLASEMEN pane -->
     <div v-show="activeTab === 'klasemen'" class="tab-pane">
-      <h3 class="section-title">🏆 Klasemen</h3>
+      <h3 class="section-title">🏆 {{ isClub ? 'Klasemen Klub' : 'Klasemen' }}</h3>
       <StandingsTable :game-id="gameId" />
 
       <!-- All matches -->
@@ -221,21 +200,14 @@
           class="match-row"
         >
           <div class="match-info">
-            <span class="match-round">R{{ match.round }} · L{{ match.court }}</span>
+            <span class="match-round">{{ isSingleCourtClub ? 'Match ' + match.round : 'R' + match.round + ' · L' + match.court }}</span>
             <div class="match-teams">
               <span class="team team-home">🏠 {{ match.home }}</span>
               <span class="team-vs">vs</span>
               <span class="team team-away">✈️ {{ match.away }}</span>
             </div>
           </div>
-          <div class="match-score-box" :class="{ 'score-played': match.score1 !== null }">
-            <span v-if="match.score1 !== null" class="match-score-inner">
-              <span class="ms-home">{{ match.score1 }}</span>
-              <span class="ms-sep">-</span>
-              <span class="ms-away">{{ match.score2 }}</span>
-            </span>
-            <span v-else class="ms-empty">—</span>
-          </div>
+          <MatchSetScores :sets="match.sets" />
         </div>
       </div>
 
@@ -269,11 +241,14 @@
           <button class="modal-close" @click="showFinishConfirm = false">✕</button>
         </div>
         <div class="modal-body">
-          <p class="confirm-text">Setelah diakhiri, sesi ini akan ditandai selesai dan kamu bisa melihat scoreboard akhir.</p>
+          <p v-if="unfinishedClubMatches" class="confirm-text">
+            {{ unfinishedClubMatches }} match masih belum punya pemenang. Isi skor berbeda untuk kedua pasangan di tiap set. Kalau jumlah set yang dimenangkan sama, tambah set penentu.
+          </p>
+          <p v-else class="confirm-text">Setelah diakhiri, sesi ini akan ditandai selesai dan kamu bisa melihat scoreboard akhir.</p>
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" @click="showFinishConfirm = false">Batal</button>
-          <button class="btn btn-danger" @click="confirmFinish">✅ Ya, Akhiri</button>
+          <button class="btn btn-danger" :disabled="unfinishedClubMatches > 0" @click="confirmFinish">✅ Ya, Akhiri</button>
         </div>
       </div>
     </div>
@@ -332,15 +307,6 @@
       @close="showShareModal = false"
     />
 
-    <!-- Edit Score Modal (fallback for detailed editing) -->
-    <EditScoreModal
-      v-if="editCourt"
-      :court="editCourtData"
-      :players="game?.players || []"
-      @close="editCourt = null"
-      @save="handleScoreSave"
-    />
-
     <!-- Bottom tab bar -->
     <nav class="tab-bar">
       <button
@@ -359,24 +325,31 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { useStandings } from '../composables/useStandings.js'
+import { getMatchResult, getMatchSets, hasSetScore } from '../composables/matchScores.js'
 import { pushGame } from '../composables/useFirestore.js'
-import { generateNextRound, regenerateRemainingRounds, computeKeptCount } from '../composables/useRotation.js'
-import EditScoreModal from '../components/EditScoreModal.vue'
+import { generateId, generateNextRound, regenerateRemainingRounds, computeKeptCount } from '../composables/useRotation.js'
+import MatchSetScores from '../components/MatchSetScores.vue'
 import ShareModal from '../components/ShareModal.vue'
 import StandingsTable from '../components/StandingsTable.vue'
 
 const props = defineProps({
   gameId: { type: String, required: true },
 })
-const emit = defineEmits(['navigate'])
+const router = useRouter()
 
-const { getGame, updateGame, subscribeToGame } = useStorage()
+const { getGame, updateGame } = useStorage()
 const game = computed(() => getGame(props.gameId))
-const { allMatches } = useStandings(game)
+const isClub = computed(() => game.value?.mode === 'club')
+const isSingleCourtClub = computed(() => isClub.value && game.value.numCourts === 1)
+const { allMatches, clubByPlayer } = useStandings(game)
+const unfinishedClubMatches = computed(() => isClub.value
+  ? allMatches.value.filter((match) => !getMatchResult(match.sets)).length
+  : 0
+)
 const currentRound = ref(0)
-const editCourt = ref(null)
 const showFinishConfirm = ref(false)
 const showAddRoundConfirm = ref(false)
 
@@ -395,9 +368,9 @@ const newPlayerName = ref('')
 const addPlayerInput = ref(null)
 
 // Scoreboard inline edit state
-const editingCourt = ref(null)
-const editingSide = ref(null)
-const inlineScore = ref(0)
+const scoreSides = ['score1', 'score2']
+const editingScore = ref(null)
+const inlineScore = ref('')
 const inlineInput = ref(null)
 
 // Share state
@@ -413,14 +386,18 @@ const roundNavRef = ref(null)
 const scrollLeftHint = ref(false)
 const scrollRightHint = ref(false)
 
-const editCourtData = computed(() => {
-  if (!editCourt.value || !round.value) return null
-  return round.value.courts.find((c) => c.court === editCourt.value) || null
-})
-
 // --- Player editing ---
 
 const activePlayers = computed(() => (game.value?.players || []).filter((p) => !p.inactive))
+const playerGroups = computed(() => {
+  if (!isClub.value) return [{ id: 'rotation', players: activePlayers.value }]
+  const players = new Map(activePlayers.value.map((player) => [player.id, player]))
+  return game.value.clubs.flatMap((club) => club.teams.map((team, index) => ({
+    id: team.id,
+    label: club.name + ' · Team ' + (index + 1),
+    players: team.playerIds.map((id) => players.get(id)),
+  })))
+})
 const inactivePlayers = computed(() => (game.value?.players || []).filter((p) => p.inactive))
 const minPlayers = computed(() => game.value?.numCourts * 4 || 0)
 const regeneratedFrom = computed(() => {
@@ -454,7 +431,7 @@ function applyPlayerChange(newPlayers) {
 }
 
 function renamePlayer(id, rawName) {
-  if (game.value?.completed) return
+  if (!game.value || game.value.completed) return
   const name = rawName.trim()
   const players = game.value.players.map((p) => (p.id === id ? { ...p, name } : p))
   updateGame(props.gameId, { players })
@@ -526,69 +503,85 @@ watch(currentRound, scrollActiveRoundIntoView)
 // Re-evaluate hints when rounds are added/removed (strip may become scrollable)
 watch(totalRounds, () => nextTick(updateScrollHints))
 
-function openEditModal(courtNum) {
-  editCourt.value = courtNum
-}
-
-function handleScoreSave(updatedCourt) {
-  const rounds = JSON.parse(JSON.stringify(game.value.rounds))
-  const courts = rounds[currentRound.value].courts
-  const idx = courts.findIndex((c) => c.court === updatedCourt.court)
-  if (idx !== -1) {
-    courts[idx] = updatedCourt
-  }
-  updateGame(props.gameId, { rounds })
-  editCourt.value = null
-}
-
 // --- Scoreboard inline controls ---
 
-function adjustScore(courtNum, side, delta) {
-  if (game.value?.completed) return
+function updateCourt(roundIndex, courtNum, update) {
+  if (!game.value || game.value.completed) return
   const rounds = JSON.parse(JSON.stringify(game.value.rounds))
-  const courts = rounds[currentRound.value].courts
-  const court = courts.find((c) => c.court === courtNum)
-  if (!court) return
-  const key = side === 1 ? 'score1' : 'score2'
-  const current = court[key] ?? 0
-  court[key] = Math.max(0, current + delta)
+  const court = rounds[roundIndex]?.courts.find((item) => item.court === courtNum)
+  if (!court || update(court) === false) return
   updateGame(props.gameId, { rounds })
 }
 
-function startInlineEdit(courtNum, side) {
-  if (game.value?.completed) return
-  editingCourt.value = courtNum
-  editingSide.value = side
-  const court = round.value.courts.find((c) => c.court === courtNum)
-  const key = side === 1 ? 'score1' : 'score2'
-  inlineScore.value = court?.[key] ?? 0
-  nextTick(() => {
-    if (inlineInput.value) {
-      // inlineInput is an array of refs; grab the last one rendered
-      const inputs = Array.isArray(inlineInput.value) ? inlineInput.value : [inlineInput.value]
-      const el = inputs[inputs.length - 1]
-      if (el && el.focus) el.focus()
-    }
+function addSet(courtNum) {
+  updateCourt(currentRound.value, courtNum, (court) => {
+    court.extraSets ??= []
+    court.extraSets.push({ id: generateId(), score1: null, score2: null })
   })
 }
 
-function commitInlineEdit(courtNum, side) {
-  const rounds = JSON.parse(JSON.stringify(game.value.rounds))
-  const courts = rounds[currentRound.value].courts
-  const court = courts.find((c) => c.court === courtNum)
-  if (!court) return
-  const key = side === 1 ? 'score1' : 'score2'
-  court[key] = Math.max(0, inlineScore.value)
-  updateGame(props.gameId, { rounds })
-  editingCourt.value = null
-  editingSide.value = null
+function removeSet(courtNum, setId) {
+  updateCourt(currentRound.value, courtNum, (court) => {
+    const index = court.extraSets?.findIndex((set) => set.id === setId) ?? -1
+    if (index < 0 || hasSetScore(court.extraSets[index])) return false
+    court.extraSets.splice(index, 1)
+  })
+}
+
+function findScoreSet(court, setId) {
+  return setId === null ? court : court.extraSets?.find((set) => set.id === setId)
+}
+
+function adjustScore(courtNum, setId, side, delta) {
+  updateCourt(currentRound.value, courtNum, (court) => {
+    const set = findScoreSet(court, setId)
+    if (!set) return false
+    setScore(set, side, (set[side] ?? 0) + delta)
+  })
+}
+
+function isEditing(courtNum, setId, side) {
+  const edit = editingScore.value
+  return edit?.roundIndex === currentRound.value && edit.courtNum === courtNum &&
+    edit.setId === setId && edit.side === side
+}
+
+function startInlineEdit(courtNum, set, side) {
+  if (game.value?.completed) return
+  editingScore.value = { roundIndex: currentRound.value, courtNum, setId: set.id ?? null, side }
+  inlineScore.value = set[side] ?? ''
+  nextTick(() => inlineInput.value?.[0]?.focus())
+}
+
+function commitInlineEdit() {
+  const edit = editingScore.value
+  if (!edit) return
+  editingScore.value = null
+  const value = inlineScore.value
+  updateCourt(edit.roundIndex, edit.courtNum, (court) => {
+    const set = findScoreSet(court, edit.setId)
+    if (!set) return false
+    setScore(set, edit.side, value)
+  })
+}
+
+function setScore(set, side, score) {
+  if (!Number.isFinite(score)) {
+    set[side] = null
+    return
+  }
+  set[side] = Math.max(0, Math.trunc(score))
+  if (isClub.value) {
+    const otherSide = side === 'score1' ? 'score2' : 'score1'
+    set[otherSide] ??= 0
+  }
 }
 
 // --- Share ---
 
 function openShare() {
-  shareUrl.value = `${window.location.origin}${window.location.pathname}#/match/${props.gameId}`
-  window.location.hash = `#/match/${props.gameId}`
+  const { href } = router.resolve({ name: 'rotation', params: { gameId: props.gameId } })
+  shareUrl.value = new URL(href, window.location.href).href
   // Ensure game is pushed to Firestore before sharing
   if (game.value) {
     pushGame(game.value).catch(() => {})
@@ -603,9 +596,14 @@ function finishSession() {
 }
 
 function confirmFinish() {
+  if (unfinishedClubMatches.value) return
   updateGame(props.gameId, { completed: true })
   showFinishConfirm.value = false
-  emit('navigate', 'scoreboard', props.gameId)
+  openScoreboard()
+}
+
+function openScoreboard() {
+  router.replace({ name: 'scoreboard', params: { gameId: props.gameId } })
 }
 
 // --- Add round ---
@@ -631,30 +629,18 @@ function confirmAddRound() {
   currentRound.value = rounds.length - 1
 }
 
-// --- Real-time subscription ---
-
-let unsubscribe = null
 let resizeObserver = null
 
 onMounted(() => {
   updateScrollHints()
   resizeObserver = new ResizeObserver(updateScrollHints)
   if (roundNavRef.value) resizeObserver.observe(roundNavRef.value)
-
-  // Subscribe to Firestore for real-time sync if game is already shared
-  if (window.location.hash.includes(`#/match/${props.gameId}`)) {
-    unsubscribe = subscribeToGame(props.gameId)
-  }
 })
 
 onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
-  }
-  if (unsubscribe) {
-    unsubscribe()
-    unsubscribe = null
   }
 })
 </script>
@@ -719,6 +705,17 @@ onUnmounted(() => {
   font-size: 16px;
   margin: 0 0 12px;
   color: var(--text-primary);
+}
+
+.player-group-label {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.sb-club-name {
+  color: var(--primary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .input {
@@ -873,32 +870,6 @@ onUnmounted(() => {
   color: var(--text-secondary);
 }
 
-.match-score-box {
-  flex-shrink: 0;
-}
-
-.match-score-inner {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.ms-home { color: var(--green); }
-.ms-away { color: var(--primary); }
-.ms-sep { color: var(--text-secondary); }
-
-.ms-empty {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.score-played {
-  color: var(--text-primary);
-}
-
 .empty-matches {
   text-align: center;
   padding: 24px;
@@ -1043,39 +1014,31 @@ onUnmounted(() => {
   justify-content: space-between;
 }
 
-.court-edit-btn {
-  background: rgba(255,255,255,0.2);
-  border: none;
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-  width: 32px;
-  height: 28px;
+.add-set-btn {
+  padding: 6px 10px;
+  border: 0;
   border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
 }
-
-.court-edit-btn:active {
-  background: rgba(255,255,255,0.35);
-}
-
-/* --- Inline Scoreboard --- */
 
 .court-scoreboard {
-  display: flex;
-  align-items: center;
   padding: 12px 12px 16px;
-  gap: 4px;
 }
 
-.sb-team {
-  flex: 1;
+.score-row {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 20px;
+}
+
+.sb-players,
+.sb-score-controls {
+  flex: 1;
+  min-width: 0;
 }
 
 .sb-players {
@@ -1083,7 +1046,33 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  width: 100%;
+}
+
+.court-set {
+  margin-top: 8px;
+}
+
+.court-set + .court-set {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.court-set-heading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.remove-set-btn {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font: inherit;
+  cursor: pointer;
 }
 
 .sb-player-name {
@@ -1097,6 +1086,7 @@ onUnmounted(() => {
 .sb-score-controls {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -1136,6 +1126,8 @@ onUnmounted(() => {
 }
 
 .sb-score {
+  border: 0;
+  background: transparent;
   font-size: 28px;
   font-weight: 800;
   color: var(--text-primary);
@@ -1176,9 +1168,9 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-secondary);
-  padding: 0 4px;
-  align-self: flex-start;
-  margin-top: 28px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* Actions */
@@ -1213,6 +1205,7 @@ onUnmounted(() => {
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-success { background: var(--green); color: #fff; }
 .btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-outline {
   background: transparent;
   border: 1px solid var(--border);

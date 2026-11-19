@@ -1,7 +1,8 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import router from './router.js'
 
-createApp(App).mount('#app')
+createApp(App).use(router).mount('#app')
 
 // Service worker untuk PWA (installable dari browser + offline).
 // Hanya didaftarkan di production — di dev bisa mengganggu HMR.

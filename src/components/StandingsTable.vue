@@ -1,10 +1,11 @@
 <template>
   <div class="standings-table-wrap">
+    <p v-if="winnerMessage" class="winner">{{ winnerMessage }}</p>
     <table class="standings-table">
       <thead>
         <tr>
           <th class="col-rank">#</th>
-          <th class="col-name">Nama</th>
+          <th class="col-name">{{ isClub ? 'Klub' : 'Nama' }}</th>
           <th class="col-num">M</th>
           <th class="col-num">W</th>
           <th class="col-num">L</th>
@@ -17,13 +18,13 @@
           v-for="(item, idx) in standings"
           :key="item.id"
           :class="{
-            'row-gold': idx === 0 && item.gamesPlayed > 0,
-            'row-silver': idx === 1 && item.gamesPlayed > 0,
-            'row-bronze': idx === 2 && item.gamesPlayed > 0,
+            'row-gold': (item.rank ?? idx + 1) === 1 && item.gamesPlayed > 0,
+            'row-silver': (item.rank ?? idx + 1) === 2 && item.gamesPlayed > 0,
+            'row-bronze': (item.rank ?? idx + 1) === 3 && item.gamesPlayed > 0,
             'row-inactive': item.inactive,
           }"
         >
-          <td class="col-rank">{{ idx + 1 }}</td>
+          <td class="col-rank">{{ item.rank ?? idx + 1 }}</td>
           <td class="col-name">{{ item.name }}</td>
           <td class="col-num">{{ item.gamesPlayed }}/{{ item.totalGames }}</td>
           <td class="col-num col-win">{{ item.wins }}</td>
@@ -33,7 +34,10 @@
         </tr>
       </tbody>
     </table>
-    <p class="standings-note">Diff = poin dicetak − poin kemasukan. Urutan: menang, Diff, lalu WR.</p>
+    <p class="standings-note">
+      Diff = poin dicetak − poin kemasukan.
+      {{ isClub ? 'Urutan klasemen: WR, lalu Diff.' : 'Urutan klasemen: menang, Diff, lalu WR.' }}
+    </p>
   </div>
 </template>
 
@@ -49,6 +53,13 @@ const props = defineProps({
 const { getGame } = useStorage()
 const game = computed(() => getGame(props.gameId))
 const { standings } = useStandings(game)
+const isClub = computed(() => game.value?.mode === 'club')
+const winnerMessage = computed(() => {
+  if (!isClub.value || !game.value.completed) return ''
+  const leaders = standings.value.filter((club) => club.rank === 1)
+  if (leaders.length === 1) return '🏆 Pemenang: ' + leaders[0].name
+  return 'Seri di posisi pertama: ' + leaders.map((club) => club.name).join(', ')
+})
 </script>
 
 <style scoped>
@@ -56,6 +67,11 @@ const { standings } = useStandings(game)
   background: var(--card-bg);
   border-radius: 12px;
   overflow-x: auto;
+}
+
+.winner {
+  padding: 10px;
+  font-weight: 700;
 }
 
 .standings-table {

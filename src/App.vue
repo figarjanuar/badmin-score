@@ -2,8 +2,9 @@
   <div class="app-shell">
     <header class="app-header">
       <button
-        v-if="currentView !== 'dashboard'"
+        v-if="route.name && route.name !== 'dashboard'"
         class="back-btn"
+        aria-label="Kembali"
         @click="goBack"
       >
         ←
@@ -13,125 +14,35 @@
     </header>
 
     <main class="app-main">
-      <DashboardView
-        v-if="currentView === 'dashboard'"
-        @navigate="handleNavigate"
-      />
-      <ConfigView
-        v-else-if="currentView === 'config'"
-        @navigate="handleNavigate"
-      />
-      <RotationView
-        v-else-if="currentView === 'rotation'"
-        :game-id="activeGameId"
-        @navigate="handleNavigate"
-      />
-      <ScoreboardView
-        v-else-if="currentView === 'scoreboard'"
-        :game-id="activeGameId"
-        @navigate="handleNavigate"
-        @back="goBack"
-      />
+      <RouterView v-slot="{ Component }">
+        <component :is="Component" :key="route.params.gameId" />
+      </RouterView>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, watch } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
+import { useAppBack } from './composables/useAppBack.js'
 import { useStorage } from './composables/useStorage.js'
-import DashboardView from './views/DashboardView.vue'
-import ConfigView from './views/ConfigView.vue'
-import RotationView from './views/RotationView.vue'
-import ScoreboardView from './views/ScoreboardView.vue'
 
-const { loadRemoteGame, subscribeToGame } = useStorage()
-
-const currentView = ref('dashboard')
-const activeGameId = ref(null)
+const { getGame, subscribeToGame } = useStorage()
+const route = useRoute()
+const goBack = useAppBack()
 
 const headerTitle = computed(() => {
-  switch (currentView.value) {
-    case 'dashboard': return 'BadminScore'
+  switch (route.name) {
     case 'config': return 'Konfigurasi'
-    case 'rotation': return 'Rotasi'
+    case 'rotation': return getGame(route.params.gameId)?.mode === 'club' ? 'Club vs Club' : 'Rotasi'
     case 'scoreboard': return 'Scoreboard'
     default: return 'BadminScore'
   }
 })
 
-const viewStack = ref(['dashboard'])
-let activeUnsubscribe = null
-
-function handleNavigate(view, gameId) {
-  // Cleanup previous Firestore subscription
-  if (activeUnsubscribe) {
-    activeUnsubscribe()
-    activeUnsubscribe = null
-  }
-
-  if (view === 'dashboard') {
-    viewStack.value = ['dashboard']
-    currentView.value = 'dashboard'
-    activeGameId.value = null
-    // Clear hash when going to dashboard
-    if (window.location.hash) {
-      window.location.hash = ''
-    }
-  } else {
-    viewStack.value.push(currentView.value)
-    currentView.value = view
-    if (gameId) {
-      activeGameId.value = gameId
-    }
-  }
-}
-
-function goBack() {
-  // Cleanup Firestore subscription
-  if (activeUnsubscribe) {
-    activeUnsubscribe()
-    activeUnsubscribe = null
-  }
-
-  if (viewStack.value.length > 0) {
-    currentView.value = viewStack.value.pop()
-  } else {
-    currentView.value = 'dashboard'
-  }
-}
-
-async function handleHashChange() {
-  const hash = window.location.hash
-  const match = hash.match(/^#\/match\/(.+)$/)
-  if (match) {
-    const gameId = match[1]
-    const game = await loadRemoteGame(gameId)
-    if (game) {
-      // Cleanup previous subscription
-      if (activeUnsubscribe) activeUnsubscribe()
-
-      currentView.value = game.completed ? 'scoreboard' : 'rotation'
-      activeGameId.value = gameId
-      viewStack.value = ['dashboard']
-
-      // Subscribe to real-time updates
-      activeUnsubscribe = subscribeToGame(gameId)
-    }
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('hashchange', handleHashChange)
-  // Handle initial load with hash
-  if (window.location.hash) {
-    handleHashChange()
-  }
-})
-
-onUnmounted(() => {
-  window.removeEventListener('hashchange', handleHashChange)
-  if (activeUnsubscribe) activeUnsubscribe()
-})
+watch(() => route.params.gameId, (gameId, _previousId, onCleanup) => {
+  if (gameId) onCleanup(subscribeToGame(gameId))
+}, { immediate: true })
 </script>
 
 <style>

@@ -14,7 +14,7 @@ Built with **Vue 3 + Vite**, 100% client-side (data stored in localStorage). Gre
 | ⚙️ **Game Configuration** | Set event name, number of courts, player list |
 | 🔄 **Auto Rotation** | Fair pair distribution algorithm — minimize partner repetition, even play distribution |
 | 📋 **Per Round** | Navigate between rounds, view pairings |
-| ✏️ **Score Input** | Edit scores for each match per round |
+| ✏️ **Score Input** | Edit scores directly and add sets for the same match |
 | 🏆 **Scoreboard & Standings** | Win rate, games played, match history per player |
 | 💾 **Local Storage** | Game data persists in browser (localStorage) |
 
@@ -79,7 +79,7 @@ badmin-score/
 │   ├── App.vue                # Root component + simple routing
 │   ├── style.css              # Global styles & CSS variables
 │   ├── components/
-│   │   └── EditScoreModal.vue  # Score input modal
+│   │   └── MatchSetScores.vue  # Set scores in match history
 │   ├── composables/
 │   │   ├── useRotation.js      # Rotation schedule generation algorithm
 │   │   └── useStorage.js       # Reactive localStorage wrapper

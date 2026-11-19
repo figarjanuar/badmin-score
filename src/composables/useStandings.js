@@ -1,4 +1,5 @@
 import { computed } from 'vue'
+import { getMatchResult, getMatchSets } from './matchScores.js'
 
 /**
  * Standings + rotation stats derived from a game. Shared by ScoreboardView
@@ -33,8 +34,60 @@ export function useStandings(game) {
     return m
   })
 
+  const clubByPlayer = computed(() => {
+    const clubs = new Map()
+    for (const club of game.value?.clubs || []) {
+      for (const team of club.teams) {
+        for (const id of team.playerIds) clubs.set(id, club)
+      }
+    }
+    return clubs
+  })
+
+  const clubStandings = computed(() => {
+    const stats = new Map((game.value?.clubs || []).map(({ id, name }) => [
+      id, { id, name, wins: 0, losses: 0, pointDiff: 0, gamesPlayed: 0, totalGames: 0 },
+    ]))
+
+    for (const round of game.value?.rounds || []) {
+      for (const court of round.courts) {
+        const home = stats.get(clubByPlayer.value.get(court.pair1[0])?.id)
+        const away = stats.get(clubByPlayer.value.get(court.pair2[0])?.id)
+        if (!home || !away) continue
+
+        home.totalGames++
+        away.totalGames++
+        const result = getMatchResult(getMatchSets(court))
+        if (!result) continue
+        home.gamesPlayed++
+        away.gamesPlayed++
+        home.pointDiff += result.pointDiff
+        away.pointDiff -= result.pointDiff
+        if (result.winner === 1) {
+          home.wins++
+          away.losses++
+        } else {
+          away.wins++
+          home.losses++
+        }
+      }
+    }
+
+    const compare = (a, b) => b.winRatio - a.winRatio || b.pointDiff - a.pointDiff
+    const list = [...stats.values()]
+      .map((club) => ({ ...club, winRatio: club.wins / (club.gamesPlayed || 1) }))
+      .sort(compare)
+
+    let rank = 1
+    return list.map((club, index) => {
+      if (index > 0 && compare(club, list[index - 1]) !== 0) rank = index + 1
+      return { ...club, rank, winRate: Math.round(club.winRatio * 100) }
+    })
+  })
+
   const standings = computed(() => {
     if (!game.value) return []
+    if (game.value.mode === 'club') return clubStandings.value
     const playerStats = {}
 
     game.value.players.forEach((p) => {
@@ -52,13 +105,14 @@ export function useStandings(game) {
 
     for (const round of game.value.rounds) {
       for (const court of round.courts) {
-        if (court.score1 === null || court.score2 === null) continue
+        const result = getMatchResult(getMatchSets(court), true)
+        if (!result) continue
 
         const pair1 = court.pair1
         const pair2 = court.pair2
-        const p1Won = court.score1 > court.score2
-        const p2Won = court.score2 > court.score1
-        const pointDiff = court.score1 - court.score2
+        const p1Won = result.winner === 1
+        const p2Won = result.winner === 2
+        const { pointDiff } = result
 
         pair1.forEach((id) => {
           if (playerStats[id]) {
@@ -114,19 +168,20 @@ export function useStandings(game) {
       for (const court of round.courts) {
         const pair1 = court.pair1.map((id) => playerMap.value[id] || `P${id}`)
         const pair2 = court.pair2.map((id) => playerMap.value[id] || `P${id}`)
+        const homeClub = clubByPlayer.value.get(court.pair1[0])?.name
+        const awayClub = clubByPlayer.value.get(court.pair2[0])?.name
         matches.push({
           key: `R${round.num}C${court.court}`,
           round: round.num,
           court: court.court,
-          home: pair1.join(' / '),
-          away: pair2.join(' / '),
-          score1: court.score1,
-          score2: court.score2,
+          home: [homeClub, pair1.join(' / ')].filter(Boolean).join(' · '),
+          away: [awayClub, pair2.join(' / ')].filter(Boolean).join(' · '),
+          sets: getMatchSets(court),
         })
       }
     }
     return matches
   })
 
-  return { rotationTotals, playerMap, standings, allMatches }
+  return { rotationTotals, playerMap, standings, allMatches, clubByPlayer }
 }

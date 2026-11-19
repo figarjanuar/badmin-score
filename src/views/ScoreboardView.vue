@@ -8,21 +8,20 @@
     <!-- Session summary -->
     <div class="sb-summary">
       <div class="stat">
-        <span class="stat-value">{{ game?.players.length || 0 }}</span>
-        <span class="stat-label">Pemain</span>
+        <span class="stat-value">{{ isClub ? game.clubs.length : game?.players.length || 0 }}</span>
+        <span class="stat-label">{{ isClub ? 'Klub' : 'Pemain' }}</span>
       </div>
       <div class="stat">
         <span class="stat-value">{{ game?.numCourts || 0 }}</span>
         <span class="stat-label">Lapangan</span>
       </div>
       <div class="stat">
-        <span class="stat-value">{{ game?.rounds.length || 0 }}</span>
-        <span class="stat-label">Ronde</span>
+        <span class="stat-value">{{ isClub ? allMatches.length : game?.rounds.length || 0 }}</span>
+        <span class="stat-label">{{ isClub ? 'Match' : 'Ronde' }}</span>
       </div>
     </div>
 
-    <!-- Player standings table -->
-    <h3 class="section-title">🏆 Klasemen</h3>
+    <h3 class="section-title">🏆 {{ isClub ? 'Klasemen Klub' : 'Klasemen' }}</h3>
     <StandingsTable :game-id="gameId" />
 
     <!-- All matches -->
@@ -34,21 +33,14 @@
         class="match-row"
       >
         <div class="match-info">
-          <span class="match-round">R{{ match.round }} · L{{ match.court }}</span>
+          <span class="match-round">{{ isSingleCourtClub ? 'Match ' + match.round : 'R' + match.round + ' · L' + match.court }}</span>
           <div class="match-teams">
             <span class="team team-home">🏠 {{ match.home }}</span>
             <span class="team-vs">vs</span>
             <span class="team team-away">✈️ {{ match.away }}</span>
           </div>
         </div>
-        <div class="match-score-box" :class="{ 'score-played': match.score1 !== null }">
-          <span v-if="match.score1 !== null" class="match-score-inner">
-            <span class="ms-home">{{ match.score1 }}</span>
-            <span class="ms-sep">-</span>
-            <span class="ms-away">{{ match.score2 }}</span>
-          </span>
-          <span v-else class="ms-empty">—</span>
-        </div>
+        <MatchSetScores :sets="match.sets" />
       </div>
     </div>
 
@@ -66,7 +58,7 @@
       </button>
       <button
         class="btn btn-outline btn-full back-btn"
-        @click="emit('back')"
+        @click="goBack"
       >
         ⬅ Kembali
       </button>
@@ -93,19 +85,25 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAppBack } from '../composables/useAppBack.js'
 import { useStorage } from '../composables/useStorage.js'
 import { useStandings } from '../composables/useStandings.js'
+import MatchSetScores from '../components/MatchSetScores.vue'
 import StandingsTable from '../components/StandingsTable.vue'
 
 const props = defineProps({
   gameId: { type: String, required: true },
 })
-const emit = defineEmits(['navigate', 'back'])
+const router = useRouter()
+const goBack = useAppBack()
 
 const { getGame, updateGame } = useStorage()
 const showReopenConfirm = ref(false)
 const game = computed(() => getGame(props.gameId))
-const { playerMap, allMatches } = useStandings(game)
+const isClub = computed(() => game.value?.mode === 'club')
+const isSingleCourtClub = computed(() => isClub.value && game.value.numCourts === 1)
+const { allMatches } = useStandings(game)
 
 function formatDate(iso) {
   if (!iso) return ''
@@ -122,10 +120,8 @@ function formatDate(iso) {
 function confirmReopen() {
   updateGame(props.gameId, { completed: false })
   showReopenConfirm.value = false
-  emit('navigate', 'rotation', props.gameId)
+  router.replace({ name: 'rotation', params: { gameId: props.gameId } })
 }
-
-// back navigation handled via viewStack in App.vue (@back event)
 </script>
 
 <style scoped>
@@ -248,32 +244,6 @@ function confirmReopen() {
   font-size: 10px;
   font-weight: 700;
   color: var(--text-secondary);
-}
-
-.match-score-box {
-  flex-shrink: 0;
-}
-
-.match-score-inner {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.ms-home { color: var(--green); }
-.ms-away { color: var(--primary); }
-.ms-sep { color: var(--text-secondary); }
-
-.ms-empty {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.score-played {
-  color: var(--text-primary);
 }
 
 .empty-matches {

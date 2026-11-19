@@ -6,7 +6,7 @@ Aplikasi **tracker skor badminton** untuk sesi main bersama: generate rotasi/pem
 
 - **Vue 3** (Composition API, `<script setup>`, SFC) + **Vite** — pure JavaScript, TANPA TypeScript
 - **Tanpa UI framework** — semua styling pure CSS dengan CSS custom properties di `src/style.css`
-- **Tanpa vue-router** — view switching manual via `currentView` ref di `App.vue`; deep link pakai hash (`#/match/<gameId>`)
+- **Vue Router** dengan hash history untuk GitHub Pages. Link pertandingan tetap memakai `#/match/<gameId>`.
 - **Tanpa Pinia/Vuex** — state pakai singleton reactive di `useStorage.js`
 - **Firebase Firestore** (opsional) — real-time sync antar device. **localStorage tetap primary store**; Firestore adalah sync layer
 - **qrcode** — QR code untuk share match
@@ -28,7 +28,8 @@ Firebase env vars dibaca dari `.env` (gitignored). Saat CI deploy, workflow inje
 ```
 src/
   main.js                       — bootstrap
-  App.vue                       — root shell + manual routing + hash routing
+  App.vue                       — root shell + subscription pertandingan aktif
+  router.js                     — route hash + pemuatan pertandingan dari link
   style.css                     — CSS variables + global styles
   config/
     firebase.js                 — inisialisasi Firebase (graceful kalau ga dikonfigurasi)
@@ -37,7 +38,7 @@ src/
     useFirestore.js             — CRUD + onSnapshot Firestore (pushGame, pullGame, syncGame, ...)
     useRotation.js              — generateSession(numCourts, players): algoritma rotasi
   components/
-    EditScoreModal.vue          — modal edit skor manual (fallback)
+    MatchSetScores.vue          — skor tiap set di riwayat pertandingan
     ShareModal.vue              — modal share: QR code + copy link
   views/
     DashboardView.vue           — daftar game + hapus game
@@ -70,6 +71,7 @@ game = {
       pair2: [id, id],           // away pair
       score1: Number | null,     // null = belum ada skor
       score2: Number | null,
+      extraSets?: [{ id: String, score1: Number | null, score2: Number | null }],
     }]
   }]
 }
@@ -82,8 +84,8 @@ Penyimpanan: localStorage key `badminscore` → `{ games: [...] }`. Firestore: c
 1. **`useStorage()` adalah satu-satunya pintu data** — semua komponen akses game lewat `getGames()`/`getGame(id)` (reactive, `computed`). Jangan pernah bypass ke localStorage/Firestore langsung dari view.
 2. **Optimistic updates**: mutasi state lokal → `persist()` → fire-and-forget ke Firestore (`.catch` → `console.warn`). Jangan pernah `await` Firestore di UI.
 3. **`useFirestore.js` semua fungsi guard `if (!firebaseReady) return`** — tambahkan guard yang sama untuk fungsi baru.
-4. **Routing**: `App.vue` memegang `currentView` ('dashboard' | 'config' | 'rotation' | 'scoreboard'), `viewStack`, `activeGameId`. View berkomunikasi lewat `emit('navigate', view, gameId)` dan `emit('back')`.
-5. **Hash routing**: `#/match/<gameId>` diparse di `App.vue.handleHashChange()` → `loadRemoteGame()` → navigate + `subscribeToGame()`. Subscription disimpan di `activeUnsubscribe` dan di-cleanup saat pindah view. Jangan buat subscription duplikat.
+4. **Routing**: `src/router.js` mendefinisikan route 'dashboard', 'config', 'rotation', dan 'scoreboard'. Navigasi memakai Vue Router dan tombol kembali di aplikasi memakai `useAppBack()`.
+5. **Link pertandingan**: guard router memanggil `loadRemoteGame()` dan memilih halaman skor atau scoreboard sesuai status pertandingan. `App.vue` mengelola satu subscription untuk ID pertandingan di route aktif dan menutupnya saat ID berubah atau pengguna keluar dari pertandingan.
 6. **Menambah skor**: `adjustScore(courtNum, side, delta)` di RotationView — deep-clone `rounds`, update, `updateGame(id, { rounds })`. Skor min 0, `null` diperlakukan sebagai 0. `updateGame` dengan `{ rounds }` harus dikirim utuh (bukan partial nested).
 7. **Rotation algorithm** (`useRotation.js`): `targetGames = 4` (bisa diubah), pemilihan pemain per ronde: shuffle + sort by game count (least first). `bestPairing` meminimalkan pengulangan *partner* (belum mempertimbangkan *lawan* — lihat catatan). Dengan 4 games, secara matematis setiap pemain ga bisa ketemu semua 13 pemain lain (batas 12 pertemuan).
 8. **Modal pattern**: overlay fixed + container, `@click.self` untuk close, header dengan tombol ✕, footer dengan tombol aksi. Copy dari RotationView/DashboardView.
@@ -93,8 +95,8 @@ Penyimpanan: localStorage key `badminscore` → `{ games: [...] }`. Firestore: c
 ## Alur Utama
 
 1. **Buat game**: Dashboard → ConfigView → `generateSession(numCourts, players)` → `addGame(game)` → navigate ke RotationView
-2. **Scoring**: RotationView → tombol +/− di scoreboard, klik angka untuk edit inline, atau ✏️ → EditScoreModal
-3. **Share**: tombol "🔗 Bagikan" → set hash URL + `pushGame()` → ShareModal (QR + copy link)
+2. **Scoring**: RotationView → tombol +/− di scoreboard, klik angka untuk edit langsung, dan tombol "+ Set" untuk menambah set dengan pasangan yang sama
+3. **Share**: tombol "🔗 Bagikan" → buat link dari Vue Router + `pushGame()` → ShareModal (QR + copy link)
 4. **Akses via link**: `#/match/<id>` → `loadRemoteGame` (cache localStorage dulu, baru Firestore) → subscribe real-time
 5. **Selesai**: "✅ Selesai" → `completed: true` → ScoreboardView (klasemen + riwayat)
 6. **Hapus**: Dashboard → 🗑️ → konfirmasi → `deleteGame` (localStorage + Firestore)
