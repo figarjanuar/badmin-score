@@ -1,16 +1,16 @@
 {
-  "name": "BadminScore — Tracker Skor Badminton",
+  "name": "BadminScore — Badminton Score Tracker",
   "short_name": "BadminScore",
-  "description": "Tracker skor badminton: rotasi pemain yang adil, skor per lapangan, dan share match real-time.",
-  "lang": "id",
+  "description": "Badminton score tracker with fair player rotation, court scoring, and live match sharing.",
+  "lang": "en",
   "start_url": "/badmin-score/",
   "scope": "/badmin-score/",
   "display": "standalone",
-  "background_color": "#f0f2f5",
-  "theme_color": "#2563eb",
+  "background_color": "#101713",
+  "theme_color": "#101713",
   "icons": [
-    { "src": "/badmin-score/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/badmin-score/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/badmin-score/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/badmin-score/icon-192.png?v=2", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/badmin-score/icon-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/badmin-score/icon-maskable-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

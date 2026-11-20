@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { getMatchResult, getMatchSets } from './matchScores.js'
+import { getFinalMatchResult, getMatchSets } from './matchScores.js'
 
 /**
  * Standings + rotation stats derived from a game. Shared by ScoreboardView
@@ -57,7 +57,7 @@ export function useStandings(game) {
 
         home.totalGames++
         away.totalGames++
-        const result = getMatchResult(getMatchSets(court))
+        const result = getFinalMatchResult(court, game.value)
         if (!result) continue
         home.gamesPlayed++
         away.gamesPlayed++
@@ -105,7 +105,7 @@ export function useStandings(game) {
 
     for (const round of game.value.rounds) {
       for (const court of round.courts) {
-        const result = getMatchResult(getMatchSets(court), true)
+        const result = getFinalMatchResult(court, game.value)
         if (!result) continue
 
         const pair1 = court.pair1
@@ -139,17 +139,6 @@ export function useStandings(game) {
         winRate: s.gamesPlayed > 0 ? Math.round((s.wins / s.gamesPlayed) * 100) : 0,
       }))
 
-    const hasScores = list.some((s) => s.gamesPlayed > 0)
-
-    if (!hasScores) {
-      // No scores yet — show all players in random order
-      for (let i = list.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [list[i], list[j]] = [list[j], list[i]]
-      }
-      return list
-    }
-
     return list
       .filter((s) => s.gamesPlayed > 0)
       .sort((a, b) => {
@@ -177,11 +166,16 @@ export function useStandings(game) {
           home: [homeClub, pair1.join(' / ')].filter(Boolean).join(' · '),
           away: [awayClub, pair2.join(' / ')].filter(Boolean).join(' · '),
           sets: getMatchSets(court),
+          confirmed: !!getFinalMatchResult(court, game.value),
         })
       }
     }
     return matches
   })
 
-  return { rotationTotals, playerMap, standings, allMatches, clubByPlayer }
+  const confirmedMatches = computed(() => allMatches.value
+    .filter((match) => match.confirmed)
+    .sort((a, b) => b.round - a.round || a.court - b.court))
+
+  return { rotationTotals, playerMap, standings, allMatches, confirmedMatches, clubByPlayer }
 }

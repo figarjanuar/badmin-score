@@ -6,6 +6,24 @@ export function hasSetScore({ score1, score2 }) {
   return Number.isFinite(score1) || Number.isFinite(score2)
 }
 
+export const matchStatusLabels = {
+  pending: 'Not started',
+  live: 'In progress',
+  finished: 'Finished',
+}
+
+export function getFinalMatchResult(court, game) {
+  const legacyResult = court.confirmed === undefined && game.completed
+  if (court.confirmed !== true && !legacyResult) return null
+
+  return getMatchResult(getMatchSets(court), game.mode !== 'club')
+}
+
+export function getCourtStatus(court, game) {
+  if (getFinalMatchResult(court, game)) return 'finished'
+  return getMatchSets(court).some(hasSetScore) ? 'live' : 'pending'
+}
+
 export function getMatchResult(sets, allowDraw = false) {
   let homeWins = 0
   let awayWins = 0

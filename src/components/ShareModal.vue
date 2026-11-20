@@ -1,118 +1,71 @@
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal-container share-modal">
-      <div class="modal-header">
-        <h2 class="modal-title">🔗 Bagikan Pertandingan</h2>
-        <button class="modal-close" @click="$emit('close')">✕</button>
-      </div>
-      <div class="modal-body share-body">
-        <p class="share-hint">Scan QR code atau copy link di bawah untuk membuka pertandingan ini di HP lain:</p>
+  <AppDialog title="Share match" @close="$emit('close')">
+    <div class="share-body">
+      <p v-if="status !== 'ready'" role="status">{{ hint }}</p>
+      <button v-if="status === 'error' || (status === 'local' && firebaseReady)" type="button"
+        class="action-button" @click="$emit('retry')">Retry sync</button>
 
-        <!-- QR Code -->
-        <div class="qr-wrapper">
-          <canvas ref="qrCanvas" class="qr-canvas"></canvas>
-        </div>
-
-        <!-- Share URL -->
+      <template v-if="status === 'ready'">
+        <p>Scan the QR code or copy the link to open this match on another device. Anyone with the link can edit an active session.</p>
+        <canvas ref="qrCanvas" v-show="!qrError" aria-hidden="true"></canvas>
         <div class="share-url-row">
-          <input
-            ref="urlInput"
-            class="share-url-input"
-            :value="url"
-            readonly
-            @click="$refs.urlInput.select()"
-          />
-          <button class="btn btn-primary btn-copy" @click="copyLink">
-            {{ copied ? '✅ Tersalin' : '📋 Copy' }}
-          </button>
+          <input class="input" ref="urlInput" aria-label="Match link" :value="url" readonly @click="urlInput.select()" />
+          <button type="button" class="action-button primary" @click="copyLink">Copy link</button>
         </div>
-      </div>
+        <p v-if="copyMessage" class="copy-message" role="status">{{ copyMessage }}</p>
+      </template>
     </div>
-  </div>
+  </AppDialog>
 </template>
 
 <script setup>
-import { ref, onMounted, watchEffect } from 'vue'
+import { computed, ref, watch } from 'vue'
 import QRCode from 'qrcode'
+import AppDialog from './AppDialog.vue'
+import { firebaseReady } from '../config/firebase.js'
 
 const props = defineProps({
   url: { type: String, required: true },
+  status: { type: String, required: true },
 })
-defineEmits(['close'])
+defineEmits(['close', 'retry'])
 
 const qrCanvas = ref(null)
 const urlInput = ref(null)
-const copied = ref(false)
+const qrError = ref(false)
+const copyMessage = ref('')
+const hint = computed(() => ({
+  local: firebaseReady
+    ? 'Saved on this device. Connect to the internet to share this session.'
+    : 'Saved on this device. Sharing is unavailable.',
+  pending: 'Syncing the match. The link will appear once it’s saved online.',
+  error: 'Sync failed. The match is still saved on this device.',
+})[props.status])
 
-onMounted(() => {
-  if (qrCanvas.value && props.url) {
-    QRCode.toCanvas(qrCanvas.value, props.url, {
-      width: 220,
-      margin: 2,
-      color: {
-        dark: '#1f2937',
-        light: '#ffffff',
-      },
-    })
-  }
-})
-
-watchEffect(() => {
-  if (qrCanvas.value && props.url) {
-    QRCode.toCanvas(qrCanvas.value, props.url, {
-      width: 220,
-      margin: 2,
-      color: {
-        dark: '#1f2937',
-        light: '#ffffff',
-      },
-    })
-  }
-})
+watch([qrCanvas, () => props.url], ([canvas, url]) => {
+  if (!canvas) return
+  qrError.value = false
+  QRCode.toCanvas(canvas, url, { width: 184, margin: 4 }).catch(() => { qrError.value = true })
+}, { flush: 'post' })
 
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(props.url)
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 2000)
+    copyMessage.value = 'Link copied.'
   } catch {
-    // Fallback: select and let user copy manually
-    if (urlInput.value) {
-      urlInput.value.select()
-    }
+    urlInput.value.focus()
+    urlInput.value.select()
+    copyMessage.value = 'Link selected. Copy it using your device menu or keyboard.'
   }
 }
 </script>
 
 <style scoped>
-.share-modal {
-  max-width: 360px;
-}
-
 .share-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  justify-items: center;
   gap: 16px;
-}
-
-.share-hint {
-  font-size: 14px;
   color: var(--text-secondary);
-  text-align: center;
-  margin: 0;
-  line-height: 1.5;
-}
-
-.qr-wrapper {
-  padding: 12px;
-  background: #fff;
-  border-radius: 12px;
-  border: 2px solid var(--border);
-}
-
-.qr-canvas {
-  display: block;
 }
 
 .share-url-row {
@@ -121,87 +74,7 @@ async function copyLink() {
   width: 100%;
 }
 
-.share-url-input {
-  flex: 1;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text-primary);
-  background: var(--input-bg);
-  word-break: break-all;
-}
-
-.btn-copy {
-  white-space: nowrap;
-  padding: 10px 14px;
-  font-size: 13px;
-}
-
-/* Reuse modal styles from RotationView */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.modal-container {
-  background: var(--card-bg);
-  width: 100%;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.modal-title {
-  font-size: 17px;
-  margin: 0;
-  color: var(--text-primary);
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 20px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-body {
-  padding: 20px;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px 20px;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: opacity 0.15s;
-}
-.btn:active { opacity: 0.8; }
-.btn-primary { background: var(--primary); color: #fff; }
+.share-url-row button { flex-shrink: 0; }
+.share-body canvas { border-radius: var(--radius-control); }
+.copy-message { font-size: 14px; }
 </style>

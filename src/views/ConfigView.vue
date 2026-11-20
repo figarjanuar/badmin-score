@@ -1,8 +1,8 @@
 <template>
-  <div class="config">
-    <h2 class="view-title">Konfigurasi Game</h2>
+  <div class="page page-narrow config">
+    <PageHeading title="New session" />
 
-    <nav class="config-steps" aria-label="Bagian konfigurasi">
+    <nav class="config-steps surface" aria-label="Setup steps">
       <button
         v-for="(label, index) in steps"
         :key="index"
@@ -11,14 +11,15 @@
         :aria-current="step === index ? 'step' : undefined"
         @click="showStep(index)"
       >
+        <span class="step-number">{{ index + 1 }}</span>
         {{ label }}
       </button>
     </nav>
 
-    <section v-show="step === 0">
+    <section v-show="step === 0" class="config-panel surface">
       <fieldset class="field mode-field">
-        <legend class="field-label">Pilih Mode</legend>
-        <label v-for="mode in gameModes" :key="mode.id" class="mode-option" :class="{ selected: gameMode === mode.id }">
+        <legend class="field-label">Choose a mode</legend>
+        <label v-for="mode in gameModes" :key="mode.id" class="mode-option">
           <input v-model="gameMode" type="radio" name="game-mode" :value="mode.id" />
           <span>
             <strong>{{ mode.title }}</strong>
@@ -28,68 +29,79 @@
       </fieldset>
 
       <div class="field">
-        <label for="event-name" class="field-label">Nama Event</label>
+        <label for="event-name" class="field-label">Session name <span class="optional">(optional)</span></label>
         <input
           id="event-name"
           v-model="eventName"
           type="text"
           class="input"
-          placeholder="Mis: Reclub Jumat"
+          placeholder="e.g. Friday badminton"
         />
       </div>
     </section>
 
-    <ClubMatchConfig v-show="gameMode === 'club' && step > 0" :step="step" @create="saveGame" />
+    <ClubMatchConfig ref="clubConfig" v-show="gameMode === 'club' && step > 0" :step="step" @create="saveGame" />
 
-    <section v-show="gameMode === 'rotation' && step === 1">
+    <section v-show="gameMode === 'rotation' && step === 1" class="config-panel surface">
       <!-- Court count -->
       <div class="field">
-        <label class="field-label">Jumlah Lapangan</label>
-        <div class="stepper">
-          <button class="stepper-btn" @click="changeCourts(-1)">−</button>
-          <span class="stepper-value">{{ numCourts }}</span>
-          <button class="stepper-btn" @click="changeCourts(1)">+</button>
+        <p id="court-count-label" class="field-label">Number of courts</p>
+        <div class="stepper" role="group" aria-labelledby="court-count-label">
+          <button type="button" class="action-button icon" aria-label="Decrease court count" :disabled="numCourts === 1" @click="changeCourts(-1)">−</button>
+          <output class="stepper-value">{{ numCourts }}</output>
+          <button type="button" class="action-button icon" aria-label="Increase court count" :disabled="numCourts === 6" @click="changeCourts(1)">+</button>
         </div>
       </div>
 
       <!-- Rotation mode -->
       <div class="field">
-        <label class="field-label">Mode Rotasi</label>
+        <p class="field-label">Rotation mode</p>
         <div class="mode-toggle">
           <button
-            class="mode-btn"
+            class="action-button mode-btn"
             :class="{ active: rotationMode === 'americano' }"
+            :aria-pressed="rotationMode === 'americano'"
             @click="rotationMode = 'americano'"
           >
-            <span class="mode-emoji">⚡</span>
-            <span class="mode-label">Cepat</span>
+            <span class="mode-label">Quick rotation</span>
           </button>
           <button
-            class="mode-btn"
+            class="action-button mode-btn"
             :class="{ active: rotationMode === 'completePartner' }"
+            :aria-pressed="rotationMode === 'completePartner'"
             @click="rotationMode = 'completePartner'"
           >
-            <span class="mode-emoji">🤝</span>
-            <span class="mode-label">Lengkap</span>
+            <span class="mode-label">Full partner rotation</span>
           </button>
         </div>
         <p class="mode-desc">
           {{ rotationMode === 'americano'
-            ? 'Ronde lebih sedikit, semua pemain ketemu semua (partner & lawan). Cocok buat sesi santai.'
-            : 'Setiap pemain jadi partner dengan semua pemain lain. Ronde lebih banyak & lengkap.' }}
+            ? 'Fewer rounds. Every player meets the others as a partner or opponent.'
+            : 'More rounds so every player partners with everyone else.' }}
         </p>
       </div>
     </section>
 
-    <section v-show="gameMode === 'rotation' && step === 2">
+    <section v-show="gameMode === 'rotation' && step === 2" class="config-panel surface">
       <!-- Player names -->
       <div class="field">
         <div class="field-row">
-          <label class="field-label">Daftar Pemain ({{ players.length }})</label>
-          <button class="btn btn-sm btn-outline" @click="randomizeNames">
-            🎲 Acak Nama
+          <h2 class="field-label">Player roster</h2>
+          <button type="button" class="action-button" :disabled="filledPlayers.length === players.length" @click="fillExampleNames">
+            Fill sample names
           </button>
         </div>
+        <p class="player-progress" aria-live="polite">
+          {{ filledPlayers.length }} entered · {{ effectiveMinPlayers }} required for {{ numCourts }} {{ numCourts === 1 ? 'court' : 'courts' }}
+        </p>
+        <details class="paste-players">
+          <summary>Paste a list of names</summary>
+          <label for="paste-players">One name per line</label>
+          <textarea id="paste-players" v-model="namesToPaste" class="input" rows="3"></textarea>
+          <button type="button" class="action-button" :disabled="!namesToPaste.trim()" @click="pasteNames">
+            Add names
+          </button>
+        </details>
 
         <div class="player-list">
           <div
@@ -97,64 +109,64 @@
             :key="player.id"
             class="player-row"
           >
-            <span class="player-num">{{ idx + 1 }}</span>
+            <span class="player-num" aria-hidden="true">{{ idx + 1 }}</span>
             <input
               v-model="player.name"
               type="text"
               class="input player-input"
-              :placeholder="'Pemain ' + (idx + 1)"
+              :aria-label="'Player name ' + (idx + 1)"
+              :placeholder="'Player name ' + (idx + 1)"
             />
             <button
-              class="btn-icon"
+              class="action-button ghost icon remove-player"
               @click="removePlayer(idx)"
+              :aria-label="'Remove player ' + (player.name.trim() || idx + 1)"
               :disabled="players.length <= effectiveMinPlayers"
             >
-              ✕
+              <AppIcon name="close" />
             </button>
           </div>
         </div>
 
         <button
-          class="btn btn-outline btn-full"
+          class="action-button full-width"
           @click="addPlayer"
         >
-          + Tambah Pemain
+          + Add player
         </button>
       </div>
 
       <!-- Summary -->
-      <div class="summary-box">
+      <div v-if="readyToGenerate" class="summary-box surface">
         <div class="summary-row">
-          <span>Pemain main per ronde:</span>
-          <strong>{{ numCourts * 4 }} orang</strong>
+          <span>Playing per round</span>
+          <strong>{{ numCourts * 4 }}</strong>
         </div>
         <div class="summary-row">
-          <span>Pemain istirahat per ronde:</span>
-          <strong>{{ Math.max(0, players.length - numCourts * 4) }} orang</strong>
+          <span>Resting per round</span>
+          <strong>{{ Math.max(0, filledPlayers.length - numCourts * 4) }}</strong>
         </div>
         <div class="summary-row">
-          <span>Target ronde:</span>
-          <strong>{{ targetRounds }} ronde</strong>
+          <span>Estimated rounds</span>
+          <strong>{{ targetRounds }}</strong>
         </div>
       </div>
 
       <!-- Generate button -->
       <button
-        class="btn btn-primary btn-full btn-generate"
-        :disabled="players.length < effectiveMinPlayers"
+        class="action-button primary full-width"
+        :disabled="!readyToGenerate"
         @click="generate"
       >
-        ▶️ Generate Jadwal
+        Create schedule
       </button>
 
-      <p v-if="players.length < effectiveMinPlayers" class="error-hint">
-        Minimal {{ effectiveMinPlayers }} pemain untuk {{ numCourts }} lapangan
-      </p>
+      <p v-if="!readyToGenerate" class="error-hint">Enter at least {{ effectiveMinPlayers }} player names to create the schedule.</p>
     </section>
 
     <div class="step-actions">
-      <button v-if="step > 0" type="button" class="btn btn-outline" @click="showStep(step - 1)">Sebelumnya</button>
-      <button v-if="step < steps.length - 1" type="button" class="btn btn-primary step-next" @click="showStep(step + 1)">Lanjut</button>
+      <button v-if="step > 0" type="button" class="action-button" @click="showStep(step - 1)">Back</button>
+      <button v-if="step < steps.length - 1" type="button" class="action-button primary step-next" @click="showStep(step + 1)">Next</button>
     </div>
   </div>
 </template>
@@ -164,6 +176,8 @@ import { ref, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { generateSession, estimateRounds, estimateRoundsCompletePartner } from '../composables/useRotation.js'
+import AppIcon from '../components/AppIcon.vue'
+import PageHeading from '../components/PageHeading.vue'
 import ClubMatchConfig from '../components/ClubMatchConfig.vue'
 
 const router = useRouter()
@@ -172,13 +186,15 @@ const { addGame } = useStorage()
 const eventName = ref('')
 const gameMode = ref('rotation')
 const step = ref(0)
+const clubConfig = ref(null)
+const namesToPaste = ref('')
 const steps = computed(() => gameMode.value === 'club'
-  ? ['Mode & Event', 'Klub & Pasangan', 'Jadwal']
-  : ['Mode & Event', 'Pengaturan', 'Pemain']
+  ? ['Mode & session', 'Clubs & pairs', 'Schedule']
+  : ['Mode & session', 'Settings', 'Players']
 )
 const gameModes = [
-  { id: 'rotation', title: 'Rotasi Pemain', description: 'Susun pasangan dan lawan otomatis dari daftar pemain.' },
-  { id: 'club', title: 'Club vs Club', description: 'Jadwalkan pertandingan antarklub dengan pasangan tetap.' },
+  { id: 'rotation', title: 'Player rotation', description: 'Automatically assign partners and opponents from your roster.' },
+  { id: 'club', title: 'Club vs Club', description: 'Schedule matches between clubs with fixed pairs.' },
 ]
 const numCourts = ref(2)
 const rotationMode = ref('americano')
@@ -199,24 +215,34 @@ const players = ref(
 )
 
 const effectiveMinPlayers = computed(() => numCourts.value * 4)
+const filledPlayers = computed(() => players.value.filter((player) => player.name.trim()))
+const readyToGenerate = computed(() => filledPlayers.value.length >= effectiveMinPlayers.value)
 
 const targetRounds = computed(() => {
   if (rotationMode.value === 'completePartner') {
-    return estimateRoundsCompletePartner(numCourts.value, players.value.length)
+    return estimateRoundsCompletePartner(numCourts.value, filledPlayers.value.length)
   }
-  return estimateRounds(numCourts.value, players.value.length)
+  return estimateRounds(numCourts.value, filledPlayers.value.length)
 })
 
-function showStep(index) {
+async function showStep(index) {
   if (step.value === index) return
+  if (gameMode.value === 'club' && index === 2) {
+    step.value = 1
+    await nextTick()
+    if (!clubConfig.value.validateRoster()) return
+  }
   step.value = index
-  nextTick(() => window.scrollTo({ top: 0 }))
+  await nextTick()
+  document.querySelector('.config-step[aria-current="step"]')?.focus()
+  window.scrollTo({ top: 0 })
 }
 
 function changeCourts(delta) {
   const next = numCourts.value + delta
   if (next >= 1 && next <= 6) {
     numCourts.value = next
+    while (players.value.length < next * 4) addPlayer()
   }
 }
 
@@ -230,28 +256,34 @@ function removePlayer(idx) {
   }
 }
 
-function randomizeNames() {
-  const shuffled = [...DEFAULT_NAMES].sort(() => Math.random() - 0.5)
-  players.value.forEach((p, i) => {
-    if (i < shuffled.length) {
-      p.name = shuffled[i]
-    }
-  })
+function fillExampleNames() {
+  const used = new Set(filledPlayers.value.map(({ name }) => name.trim().toLowerCase()))
+  const examples = DEFAULT_NAMES.filter((name) => !used.has(name.toLowerCase()))
+  for (const [index, player] of players.value.entries()) {
+    if (!player.name.trim()) player.name = examples.shift() || `Sample player ${index + 1}`
+  }
+}
+
+function pasteNames() {
+  const names = namesToPaste.value.split(/\r?\n/).map((name) => name.trim()).filter(Boolean)
+  const empty = players.value.filter((player) => !player.name.trim())
+  for (const name of names) {
+    const row = empty.shift()
+    if (row) row.name = name
+    else players.value.push({ id: ++nameCounter, name })
+  }
+  namesToPaste.value = ''
 }
 
 function generate() {
-  const filled = players.value.filter((p) => p.name.trim())
-  if (filled.length < effectiveMinPlayers.value) {
-    alert(`Minimal ${effectiveMinPlayers.value} pemain untuk ${numCourts.value} lapangan`)
-    return
-  }
+  if (!readyToGenerate.value) return
 
-  const game = generateSession(numCourts.value, filled.map((p) => ({ id: p.id, name: p.name.trim() })), rotationMode.value)
-  saveGame(game)
+  const roster = filledPlayers.value.map(({ id, name }) => ({ id, name: name.trim() }))
+  saveGame(generateSession(numCourts.value, roster, rotationMode.value))
 }
 
 function saveGame(game) {
-  game.name = eventName.value.trim() || `Game ${new Date().toLocaleDateString('id-ID')}`
+  game.name = eventName.value.trim() || `Session ${new Date().toLocaleDateString('en-GB')}`
   game.completed = false
 
   addGame(game)
@@ -260,280 +292,94 @@ function saveGame(game) {
 </script>
 
 <style scoped>
-.config {
-  padding: 16px;
-  max-width: 480px;
-  margin: 0 auto;
-}
-
-.view-title {
-  font-size: 22px;
-  margin: 0 0 20px;
-  color: var(--text-primary);
-}
-
 .config-steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  margin-bottom: 20px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--tag-bg);
+  gap: 5px;
+  padding: 5px;
+  margin-bottom: 18px;
 }
 
 .config-step {
-  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 8px;
+  min-height: 52px;
   padding: 6px 4px;
-  border: 0;
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-secondary);
-  font: inherit;
   font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.config-step[aria-current="step"] {
-  background: var(--card-bg);
-  color: var(--primary);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
-}
-
-.step-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.step-next {
-  flex: 1;
-}
-
-.field {
-  margin-bottom: 20px;
-}
-
-.mode-field {
-  min-width: 0;
-  border: 0;
-}
-
-.mode-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card-bg);
-  cursor: pointer;
-}
-
-.mode-option + .mode-option { margin-top: 8px; }
-.mode-option.selected { border-color: var(--primary); background: var(--primary-bg); }
-.mode-option input { margin-top: 5px; accent-color: var(--primary); }
-.mode-option small { display: block; color: var(--text-secondary); }
-
-.field-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-}
-
-.field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.input {
-  width: 100%;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-size: 16px;
-  box-sizing: border-box;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-/* Stepper */
-.stepper {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.stepper-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--card-bg);
-  color: var(--text-primary);
-  font-size: 20px;
-  cursor: pointer;
-}
-
-.stepper-value {
-  font-size: 24px;
   font-weight: 700;
-  min-width: 32px;
-  text-align: center;
-  color: var(--text-primary);
-}
-
-/* Mode toggle */
-.mode-toggle {
-  display: flex;
-  gap: 8px;
-}
-
-.mode-btn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 8px;
-  border-radius: 10px;
-  border: 2px solid var(--border);
-  background: var(--card-bg);
-  color: var(--text-primary);
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
 }
 
-.mode-btn.active {
-  border-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 8%, var(--card-bg));
-}
-
-.mode-emoji {
-  font-size: 22px;
-}
-
-.mode-label {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.mode-desc {
-  margin: 8px 0 0;
+.step-number {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--tag-bg);
   font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.5;
 }
+.config-step[aria-current="step"] { border-color: var(--border-strong); background: var(--primary-bg); color: var(--primary); }
+.config-step[aria-current="step"] .step-number { background: var(--primary); color: var(--on-primary); }
 
-/* Player list */
-.player-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.player-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.player-num {
-  width: 24px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  text-align: right;
-}
-
-.player-input {
-  flex: 1;
-}
-
-.btn-icon {
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: none;
-  color: var(--danger);
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-icon:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* Summary */
-.summary-box {
-  background: var(--card-bg);
-  border-radius: 10px;
-  padding: 16px;
-  margin-bottom: 20px;
-}
-
-.summary-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 6px 0;
-  font-size: 14px;
-  color: var(--text-primary);
-}
-
-.summary-row strong {
-  color: var(--primary);
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px 20px;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: opacity 0.15s;
-}
-.btn:active { opacity: 0.8; }
-.btn-full { width: 100%; }
-.btn-sm { padding: 8px 14px; font-size: 13px; }
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-outline {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-}
-
-.btn-generate {
+.config-panel { padding: clamp(16px, 4vw, 28px); }
+.field + .field { margin-top: 20px; }
+.mode-field { min-width: 0; border: 0; }
+.mode-option {
+  position: relative;
+  display: block;
   padding: 14px;
-  font-size: 17px;
-  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+  cursor: pointer;
 }
+.mode-option + .mode-option { margin-top: 8px; }
+.mode-option:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); }
+.mode-option:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 3px; }
+.mode-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.mode-option small { display: block; color: var(--text-secondary); font-size: 14px; }
 
-.error-hint {
-  text-align: center;
-  color: var(--danger);
-  font-size: 13px;
-  margin: 8px 0 0;
+.step-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.field-label { display: block; margin-bottom: 8px; color: var(--text-primary); font-size: 15px; font-weight: 700; }
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.field-row .field-label { margin: 0; }
+.stepper { display: flex; gap: 12px; align-items: center; }
+.stepper-value { min-width: 32px; text-align: center; font: 700 34px / 1 var(--font-display); }
+.mode-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mode-btn.active { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
+.mode-desc, .optional, .player-progress { color: var(--text-secondary); }
+.mode-desc, .player-progress { margin-top: 8px; font-size: 14px; }
+.optional { font-weight: 400; }
+.player-progress { margin-bottom: 12px; }
+.remove-player, .error-hint { color: var(--danger); }
+.error-hint { margin-top: 8px; font-size: 14px; }
+.paste-players { margin-bottom: 12px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-control); }
+.paste-players summary { min-height: var(--size-control); align-content: center; cursor: pointer; font-weight: 650; }
+.paste-players label { display: block; font-size: 14px; color: var(--text-secondary); }
+.paste-players textarea { display: block; width: 100%; margin: 4px 0 8px; resize: vertical; }
+.paste-players button { margin-bottom: 10px; }
+
+.summary-box { margin: 16px 0; padding: 10px 14px; background: var(--input-bg); }
+.summary-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 14px; }
+.summary-row strong { color: var(--primary); font-variant-numeric: tabular-nums; }
+.full-width { width: 100%; }
+
+@media (min-width: 480px) {
+  .config-step { flex-direction: row; }
 }
 </style>

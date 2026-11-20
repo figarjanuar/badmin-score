@@ -1,325 +1,274 @@
 <template>
-  <div class="rotation">
-    <!-- Top bar: header actions -->
-    <div class="rotation-topbar">
-      <h2 class="topbar-title">{{ game?.name || 'Rotasi' }}</h2>
-      <div class="topbar-actions">
-        <button
-          class="btn btn-outline btn-sm btn-share"
-          @click="openShare"
-        >
-          🔗 Bagikan
+  <div class="page rotation">
+    <PageHeading :title="game?.name || 'Rotation'" :label="isClub ? 'Club vs Club' : 'Player rotation'">
+      <template #actions>
+        <button type="button" class="action-button" @click="openShare">
+          <AppIcon name="share" /> Share
         </button>
-        <button
-          v-if="!game?.completed"
-          class="btn btn-success btn-sm"
-          @click="finishSession"
-        >
-          ✅ Selesai
+        <button v-if="!game?.completed" type="button" class="action-button ghost" @click="finishSession">
+          End session
         </button>
+        <button v-else type="button" class="action-button primary" @click="openScoreboard">
+          View results
+        </button>
+      </template>
+    </PageHeading>
+
+    <!-- Bottom tab bar -->
+    <nav class="tab-bar" aria-label="Session tabs">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        class="tab-btn"
+        :class="{ active: activeTab === tab.id }"
+        :aria-pressed="activeTab === tab.id"
+        @click="selectTab(tab.id)"
+      >
+        <AppIcon :name="tab.icon" />
+        <span>{{ tab.label }}</span>
+      </button>
+    </nav>
+    <!-- Score pane: scoreboard for the current round -->
+    <div v-show="activeTab === 'skor'" class="tab-pane">
+      <div class="round-summary">
+        <h2>{{ roundLabel }} {{ currentRound + 1 }} of {{ totalRounds }}</h2>
+        <span class="round-progress"><AppIcon name="check" /> {{ confirmedInRound }} of {{ round?.courts.length || 0 }} confirmed</span>
+      </div>
+      <!-- Round navigation: horizontal scroll -->
+      <div
+        class="round-nav-scroll"
+        ref="roundNavRef"
+        :class="{ 'fade-left': scrollLeftHint, 'fade-right': scrollRightHint }"
+        @scroll="updateScrollHints"
+      >
         <button
-          v-else
-          class="btn btn-outline btn-sm"
-          @click="openScoreboard"
+          v-for="(r, i) in game?.rounds || []"
+          :key="r.num"
+          class="round-chip"
+          :class="{ active: i === currentRound }"
+          :aria-current="i === currentRound ? 'step' : undefined"
+          @click="currentRound = i"
         >
-          🏆 Scoreboard
+          {{ roundLabel }} {{ i + 1 }}
         </button>
       </div>
-    </div>
 
-    <!-- SKOR pane: scoreboard for the current round -->
-    <div v-show="activeTab === 'skor'" class="tab-pane">
-    <!-- Round navigation: horizontal scroll -->
-    <div
-      class="round-nav-scroll"
-      ref="roundNavRef"
-      :class="{ 'fade-left': scrollLeftHint, 'fade-right': scrollRightHint }"
-      @scroll="updateScrollHints"
-    >
-      <button
-        v-for="(r, i) in game?.rounds || []"
-        :key="r.num"
-        class="round-chip"
-        :class="{ active: i === currentRound }"
-        @click="currentRound = i"
-      >
-        {{ isSingleCourtClub ? 'Match' : 'Ronde' }} {{ i + 1 }}
-      </button>
-    </div>
-
-    <!-- Court cards for current round -->
-    <div class="courts" v-if="round">
-      <div
-        v-for="court in round.courts"
-        :key="court.court"
-        class="court-card"
-      >
-        <div class="court-header">
-          <span>{{ isSingleCourtClub ? 'Match ' + round.num : 'Lapangan ' + court.court }}</span>
-          <button v-if="!game.completed" class="add-set-btn" @click="addSet(court.court)">+ Set</button>
-        </div>
-
-        <div class="court-scoreboard">
-          <div class="score-row">
-            <template v-for="(pair, sideIndex) in [court.pair1, court.pair2]" :key="sideIndex">
-              <span v-if="sideIndex === 1" class="sb-vs">VS</span>
-              <div class="sb-players">
-                <strong v-if="isClub" class="sb-club-name">{{ clubByPlayer.get(pair[0])?.name }}</strong>
-                <span v-for="pid in pair" :key="pid" class="sb-player-name">{{ playerName(pid) }}</span>
-              </div>
-            </template>
+      <p v-if="!isClub && round" class="resting">
+        <strong><AppIcon name="players" /> Resting this round</strong>
+        <span>{{ restingNames.length ? restingNames.join(', ') : 'All active players are playing' }}</span>
+      </p>
+      <!-- Court cards for current round -->
+      <div class="courts" v-if="round" :key="round.num" :class="{ 'single-court': round.courts.length === 1 }">
+        <div
+          v-for="court in round.courts"
+          :key="court.court"
+          :id="'lapangan-' + court.court"
+          class="court-card surface"
+          tabindex="-1"
+        >
+          <div class="court-header">
+            <h3>{{ isSingleCourtClub ? 'Match ' + round.num : 'Court ' + court.court }}</h3>
+            <StatusBadge role="status" :tone="courtStatusTones[getCourtStatus(court, game)]">
+              {{ matchStatusLabels[getCourtStatus(court, game)] }}
+            </StatusBadge>
           </div>
 
-          <section v-for="(set, setIndex) in getMatchSets(court)" :key="set.id ?? 0" class="court-set" :aria-label="'Set ' + (setIndex + 1)">
-            <div v-if="court.extraSets?.length" class="court-set-heading">
-              <strong>Set {{ setIndex + 1 }}</strong>
-              <button
-                v-if="setIndex > 0 && !hasSetScore(set) && !game.completed"
-                class="remove-set-btn"
-                @click="removeSet(court.court, set.id)"
-              >Hapus set</button>
+          <div class="court-scoreboard">
+            <div class="score-row">
+              <template v-for="(pair, sideIndex) in [court.pair1, court.pair2]" :key="sideIndex">
+                <span v-if="sideIndex === 1" class="sb-vs">VS</span>
+                <div class="sb-players">
+                  <strong v-if="isClub" class="sb-club-name">{{ clubByPlayer.get(pair[0])?.name }}</strong>
+                  <span v-for="pid in pair" :key="pid" class="sb-player-name">{{ playerName(pid) }}</span>
+                </div>
+              </template>
             </div>
 
-            <div class="score-row">
-              <div v-for="side in scoreSides" :key="side" class="sb-score-controls">
+            <section v-for="(set, setIndex) in getMatchSets(court)" :key="set.id ?? 0" class="court-set" :aria-label="'Set ' + (setIndex + 1)">
+              <div v-if="court.extraSets?.length" class="court-set-heading">
+                <strong>Set {{ setIndex + 1 }}</strong>
                 <button
-                  class="sb-btn sb-minus"
-                  :aria-label="'Kurangi skor pasangan ' + (side === 'score1' ? 1 : 2)"
-                  :disabled="game.completed"
-                  @click="adjustScore(court.court, set.id ?? null, side, -1)"
-                >−</button>
-                <input
-                  v-if="isEditing(court.court, set.id ?? null, side)"
-                  ref="inlineInput"
-                  v-model.number="inlineScore"
-                  type="number"
-                  min="0"
-                  inputmode="numeric"
-                  placeholder="0"
-                  :aria-label="'Skor pasangan ' + (side === 'score1' ? 1 : 2)"
-                  class="sb-score-input"
-                  @blur="commitInlineEdit"
-                  @keyup.enter="$event.target.blur()"
-                />
-                <button
-                  v-else
-                  class="sb-score"
-                  :aria-label="'Edit skor pasangan ' + (side === 'score1' ? 1 : 2) + ', ' + (set[side] ?? 0)"
-                  :disabled="game.completed"
-                  @click="startInlineEdit(court.court, set, side)"
-                >{{ set[side] ?? 0 }}</button>
-                <button
-                  class="sb-btn sb-plus"
-                  :aria-label="'Tambah skor pasangan ' + (side === 'score1' ? 1 : 2)"
-                  :disabled="game.completed"
-                  @click="adjustScore(court.court, set.id ?? null, side, 1)"
-                >+</button>
+                  v-if="setIndex > 0 && !hasSetScore(set) && !court.confirmed && !game.completed"
+                  class="remove-set-btn"
+                  @click="removeSet(court.court, set.id)"
+                >Remove set</button>
               </div>
-            </div>
-          </section>
+
+              <div class="score-row">
+                <ScoreControl
+                  v-for="side in scoreSides"
+                  :key="side"
+                  :button-id="scoreButtonId(court.court, set.id, side)"
+                  :round-number="round.num"
+                  :score="set[side]"
+                  :pair="pairNames(court, side)"
+                  :locked="game.completed || court.confirmed === true"
+                  @adjust="adjustScore(court.court, set.id ?? null, side, $event)"
+                  @score="(value, roundNumber) => editScore(roundNumber, court.court, set.id ?? null, side, value)"
+                />
+              </div>
+            </section>
+          </div>
+          <footer v-if="!game.completed" class="court-actions">
+            <button v-if="court.confirmed" type="button" class="action-button court-result-action" @click="reopenResult(court.court)">
+              Correct result
+            </button>
+            <template v-else>
+              <p v-if="getCourtStatus(court, game) === 'live' && !canConfirmResult(court)" class="score-hint">
+                {{ resultHint(court) }}
+              </p>
+              <button type="button" class="action-button" @click="addSet(court.court)">Add set</button>
+              <button type="button" class="action-button primary court-result-action" :disabled="!canConfirmResult(court)" @click="confirmResult(court.court)">
+                Confirm result
+              </button>
+            </template>
+          </footer>
         </div>
+      </div>
+
+      <div class="rotation-actions">
+        <button
+          v-if="!isClub && !game?.completed && currentRound === totalRounds - 1"
+          class="action-button"
+          @click="requestAddRound"
+        >
+          Add round
+        </button>
       </div>
     </div>
 
-<!-- Actions -->
-    <div class="rotation-actions">
-      <button
-        v-if="!isClub && !game?.completed && currentRound === totalRounds - 1"
-        class="btn btn-outline btn-full"
-        @click="requestAddRound"
-      >
-        ➕ Tambah Ronde
-      </button>
-    </div>
-    </div>
-
-    <!-- PEMAIN pane: edit players mid-game -->
-    <div v-show="activeTab === 'pemain'" class="tab-pane">
-      <h3 class="section-title">👥 Pemain Aktif ({{ activePlayers.length }})</h3>
+    <!-- Players pane: edit players mid-game -->
+    <div v-show="activeTab === 'pemain'" class="tab-pane roster-pane surface">
+      <h2 class="section-title">Active players ({{ activePlayers.length }})</h2>
       <div v-for="group in playerGroups" :key="group.id" class="player-list">
-        <h4 v-if="group.label" class="player-group-label">{{ group.label }}</h4>
+        <h3 v-if="group.label" class="player-group-label">{{ group.label }}</h3>
         <div v-for="(p, idx) in group.players" :key="p.id" class="player-row">
           <span class="player-num">{{ idx + 1 }}</span>
           <input
             class="input player-input"
             :value="p.name"
-            :placeholder="'Pemain ' + (idx + 1)"
-            :aria-label="(group.label ? group.label + ' · ' : '') + 'Pemain ' + (idx + 1)"
+            :placeholder="'Player ' + (idx + 1)"
+            :aria-label="(group.label ? group.label + ' · ' : '') + 'Player ' + (idx + 1)"
             :disabled="game?.completed"
             @blur="renamePlayer(p.id, $event.target.value)"
             @keyup.enter="$event.target.blur()"
           />
           <button
             v-if="!isClub"
-            class="btn-icon"
+            class="action-button ghost icon player-remove"
             :disabled="game?.completed || activePlayers.length <= minPlayers"
             @click="requestDelete(p)"
-            title="Keluarkan dari rotasi"
-          >✕</button>
+            :aria-label="'Remove ' + p.name + ' from rotation'"
+          ><AppIcon name="close" /></button>
         </div>
       </div>
       <button
         v-if="!isClub && !game?.completed"
-        class="btn btn-outline btn-full"
+        class="action-button"
         @click="openAddPlayer"
       >
-        ➕ Tambah Pemain
+        Add player
       </button>
       <p v-if="!isClub && activePlayers.length <= minPlayers" class="error-hint">
-        Minimal {{ minPlayers }} pemain untuk {{ game?.numCourts }} lapangan
+        At least {{ minPlayers }} players required for {{ game?.numCourts }} {{ game?.numCourts === 1 ? 'court' : 'courts' }}.
       </p>
 
       <div v-if="!isClub && inactivePlayers.length" class="inactive-section">
-        <h4 class="section-title">💤 Pemain Keluar ({{ inactivePlayers.length }})</h4>
+        <h3 class="section-title">Inactive players ({{ inactivePlayers.length }})</h3>
         <div v-for="p in inactivePlayers" :key="p.id" class="player-row row-inactive">
           <span class="player-num">—</span>
           <span class="inactive-name">{{ p.name || 'P' + p.id }}</span>
           <button
-            class="btn-icon restore-btn"
+            class="action-button ghost icon restore-btn"
             :disabled="game?.completed"
             @click="restorePlayer(p)"
-            title="Masukkan kembali ke rotasi"
-          >↺</button>
+            :aria-label="'Restore ' + p.name + ' to rotation'"
+          ><AppIcon name="plus" /></button>
         </div>
       </div>
 
-      <p v-if="game?.completed" class="confirm-text">Sesi sudah selesai, pemain tidak bisa diubah.</p>
+      <p v-if="game?.completed" class="confirm-text">Reopen the session to edit players.</p>
     </div>
 
-    <!-- KLASEMEN pane -->
-    <div v-show="activeTab === 'klasemen'" class="tab-pane">
-      <h3 class="section-title">🏆 {{ isClub ? 'Klasemen Klub' : 'Klasemen' }}</h3>
+    <!-- Standings pane -->
+    <div v-show="activeTab === 'klasemen'" class="tab-pane standings-pane">
       <StandingsTable :game-id="gameId" />
 
-      <!-- All matches -->
-      <h3 class="section-title">📋 Hasil Pertandingan</h3>
-      <div class="matches" v-if="allMatches.length > 0">
-        <div
-          v-for="match in allMatches"
-          :key="match.key"
-          class="match-row"
-        >
-          <div class="match-info">
-            <span class="match-round">{{ isSingleCourtClub ? 'Match ' + match.round : 'R' + match.round + ' · L' + match.court }}</span>
-            <div class="match-teams">
-              <span class="team team-home">🏠 {{ match.home }}</span>
-              <span class="team-vs">vs</span>
-              <span class="team team-away">✈️ {{ match.away }}</span>
-            </div>
-          </div>
-          <MatchSetScores :sets="match.sets" />
-        </div>
-      </div>
-
-      <div v-else class="empty-matches">
-        <p>Belum ada skor yang dimasukkan</p>
-      </div>
+      <MatchHistory :matches="confirmedMatches" :single-court-club="isSingleCourtClub" />
     </div>
 
     <!-- Add Round Confirmation Modal -->
-    <div v-if="showAddRoundConfirm" class="modal-overlay" @click.self="showAddRoundConfirm = false">
-      <div class="modal-container">
-        <div class="modal-header">
-          <h2 class="modal-title">➕ Tambah Ronde?</h2>
-          <button class="modal-close" @click="showAddRoundConfirm = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <p class="confirm-text">Ronde ke-{{ totalRounds + 1 }} akan ditambahkan. Pemain akan dirotasi otomatis berdasarkan statistik permainan sebelumnya.</p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" @click="showAddRoundConfirm = false">Batal</button>
-          <button class="btn btn-primary" @click="confirmAddRound">➕ Ya, Tambah</button>
-        </div>
-      </div>
-    </div>
+    <AppDialog v-if="showAddRoundConfirm" title="Add round?" @close="showAddRoundConfirm = false">
+      <p class="confirm-text">Round {{ totalRounds + 1 }} will rotate players based on their earlier matches.</p>
+      <template #actions>
+        <button class="action-button" @click="showAddRoundConfirm = false">Cancel</button>
+        <button class="action-button primary" @click="confirmAddRound">Add round</button>
+      </template>
+    </AppDialog>
 
-    <!-- Finish Confirmation Modal -->
-    <div v-if="showFinishConfirm" class="modal-overlay" @click.self="showFinishConfirm = false">
-      <div class="modal-container">
-        <div class="modal-header">
-          <h2 class="modal-title">✅ Akhiri Sesi?</h2>
-          <button class="modal-close" @click="showFinishConfirm = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <p v-if="unfinishedClubMatches" class="confirm-text">
-            {{ unfinishedClubMatches }} match masih belum punya pemenang. Isi skor berbeda untuk kedua pasangan di tiap set. Kalau jumlah set yang dimenangkan sama, tambah set penentu.
-          </p>
-          <p v-else class="confirm-text">Setelah diakhiri, sesi ini akan ditandai selesai dan kamu bisa melihat scoreboard akhir.</p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" @click="showFinishConfirm = false">Batal</button>
-          <button class="btn btn-danger" :disabled="unfinishedClubMatches > 0" @click="confirmFinish">✅ Ya, Akhiri</button>
-        </div>
-      </div>
-    </div>
+    <AppDialog v-if="showFinishConfirm" title="End session?" @close="showFinishConfirm = false">
+      <template v-if="unfinishedMatches.length">
+        <p class="confirm-text">{{ unfinishedMatches.length }} {{ unfinishedMatches.length === 1 ? 'match needs' : 'matches need' }} confirmation.</p>
+        <ul class="unfinished-list">
+          <li v-for="match in unfinishedMatches" :key="match.key">
+            <button type="button" class="action-button" @click="goToUnfinishedMatch(match)">
+              {{ matchLocation(match) }}
+            </button>
+          </li>
+        </ul>
+        <p class="confirm-text">{{ isClub
+          ? 'Confirm every result before ending this club session.'
+          : 'The final standings will include only confirmed results.' }}</p>
+      </template>
+      <p v-else class="confirm-text">All results are confirmed. You can reopen the session to correct a result.</p>
+      <template #actions>
+        <button type="button" class="action-button" @click="showFinishConfirm = false">Cancel</button>
+        <button type="button" class="action-button danger" :disabled="isClub && !!unfinishedMatches.length" @click="confirmFinish">
+          {{ unfinishedMatches.length && !isClub ? 'End with confirmed results' : 'End session' }}
+        </button>
+      </template>
+    </AppDialog>
 
     <!-- Delete Player Confirmation Modal -->
-    <div v-if="deleteTarget" class="modal-overlay" @click.self="deleteTarget = null">
-      <div class="modal-container">
-        <div class="modal-header">
-          <h2 class="modal-title">🗑️ Hapus Pemain?</h2>
-          <button class="modal-close" @click="deleteTarget = null">✕</button>
-        </div>
-        <div class="modal-body">
-          <p class="confirm-text">
-            <b>{{ deleteTarget.name || 'P' + deleteTarget.id }}</b> akan keluar dari rotasi.
-            Skor dan ronde sebelumnya tetap tersimpan.
-            <span v-if="regeneratedFrom < totalRounds">
-              Ronde {{ regeneratedFrom + 1 }}–{{ totalRounds }} akan disusun ulang.
-            </span>
-          </p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" @click="deleteTarget = null">Batal</button>
-          <button class="btn btn-danger" @click="confirmDelete">🗑️ Hapus</button>
-        </div>
-      </div>
-    </div>
+    <AppDialog v-if="deleteTarget" title="Remove player?" @close="deleteTarget = null">
+      <p class="confirm-text">
+        <b>{{ deleteTarget.name || 'P' + deleteTarget.id }}</b> will leave the rotation. Previous rounds and scores are saved.
+        <span v-if="regeneratedFrom < totalRounds">
+          Rounds {{ regeneratedFrom + 1 }}–{{ totalRounds }} will be rescheduled.
+        </span>
+      </p>
+      <template #actions>
+        <button class="action-button" @click="deleteTarget = null">Cancel</button>
+        <button class="action-button danger" @click="confirmDelete">Remove</button>
+      </template>
+    </AppDialog>
 
     <!-- Add Player Modal -->
-    <div v-if="showAddPlayer" class="modal-overlay" @click.self="showAddPlayer = false">
-      <div class="modal-container">
-        <div class="modal-header">
-          <h2 class="modal-title">➕ Tambah Pemain</h2>
-          <button class="modal-close" @click="showAddPlayer = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <input
-            ref="addPlayerInput"
-            class="input player-input"
-            v-model="newPlayerName"
-            placeholder="Nama pemain"
-            @keyup.enter="confirmAddPlayer"
-          />
-          <p class="confirm-text add-player-note">Pemain baru akan masuk ke ronde-ronde berikutnya.</p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" @click="showAddPlayer = false">Batal</button>
-          <button class="btn btn-primary" @click="confirmAddPlayer">✅ Simpan</button>
-        </div>
-      </div>
-    </div>
+    <AppDialog v-if="showAddPlayer" title="Add player" @close="showAddPlayer = false">
+      <input
+        ref="addPlayerInput"
+        class="input player-input"
+        v-model="newPlayerName"
+        aria-label="Player name"
+        placeholder="Player name"
+        @keyup.enter="confirmAddPlayer"
+      />
+      <p class="confirm-text add-player-note">The new player will join in upcoming rounds.</p>
+      <template #actions>
+        <button class="action-button" @click="showAddPlayer = false">Cancel</button>
+        <button class="action-button primary" :disabled="!newPlayerName.trim()" @click="confirmAddPlayer">Save</button>
+      </template>
+    </AppDialog>
 
     <!-- Share Modal -->
     <ShareModal
       v-if="showShareModal"
       :url="shareUrl"
+      :status="getSyncStatus(gameId)"
+      @retry="shareGame(gameId)"
       @close="showShareModal = false"
     />
 
-    <!-- Bottom tab bar -->
-    <nav class="tab-bar">
-      <button
-        v-for="tab in tabs"
-        :key="tab.id"
-        class="tab-btn"
-        :class="{ active: activeTab === tab.id }"
-        @click="activeTab = tab.id"
-      >
-        <span class="tab-emoji">{{ tab.emoji }}</span>
-        <span>{{ tab.label }}</span>
-      </button>
-    </nav>
   </div>
 </template>
 
@@ -328,10 +277,14 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { useStandings } from '../composables/useStandings.js'
-import { getMatchResult, getMatchSets, hasSetScore } from '../composables/matchScores.js'
-import { pushGame } from '../composables/useFirestore.js'
+import { getCourtStatus, getFinalMatchResult, getMatchResult, getMatchSets, hasSetScore, matchStatusLabels } from '../composables/matchScores.js'
+import AppDialog from '../components/AppDialog.vue'
+import AppIcon from '../components/AppIcon.vue'
 import { generateId, generateNextRound, regenerateRemainingRounds, computeKeptCount } from '../composables/useRotation.js'
-import MatchSetScores from '../components/MatchSetScores.vue'
+import MatchHistory from '../components/MatchHistory.vue'
+import PageHeading from '../components/PageHeading.vue'
+import ScoreControl from '../components/ScoreControl.vue'
+import StatusBadge from '../components/StatusBadge.vue'
 import ShareModal from '../components/ShareModal.vue'
 import StandingsTable from '../components/StandingsTable.vue'
 
@@ -340,24 +293,24 @@ const props = defineProps({
 })
 const router = useRouter()
 
-const { getGame, updateGame } = useStorage()
+const { getGame, updateGame, getSyncStatus, shareGame } = useStorage()
 const game = computed(() => getGame(props.gameId))
 const isClub = computed(() => game.value?.mode === 'club')
 const isSingleCourtClub = computed(() => isClub.value && game.value.numCourts === 1)
-const { allMatches, clubByPlayer } = useStandings(game)
-const unfinishedClubMatches = computed(() => isClub.value
-  ? allMatches.value.filter((match) => !getMatchResult(match.sets)).length
-  : 0
-)
-const currentRound = ref(0)
+const { allMatches, confirmedMatches, clubByPlayer } = useStandings(game)
+const unfinishedMatches = computed(() => allMatches.value.filter((match) => !match.confirmed))
+const roundLabel = computed(() => isSingleCourtClub.value ? 'Match' : 'Round')
+const roundKey = 'badminscore:round:' + props.gameId
+const lastRound = Number(sessionStorage.getItem(roundKey)) || 0
+const currentRound = ref(Math.max(0, Math.min(lastRound, (game.value?.rounds.length || 1) - 1)))
 const showFinishConfirm = ref(false)
 const showAddRoundConfirm = ref(false)
 
 // Bottom tab bar state
 const tabs = [
-  { id: 'pemain', emoji: '👥', label: 'Pemain' },
-  { id: 'skor', emoji: '🏸', label: 'Skor' },
-  { id: 'klasemen', emoji: '🏆', label: 'Klasemen' },
+  { id: 'pemain', icon: 'players', label: 'Players' },
+  { id: 'skor', icon: 'score', label: 'Score' },
+  { id: 'klasemen', icon: 'ranking', label: 'Standings' },
 ]
 const activeTab = ref('skor')
 
@@ -369,19 +322,18 @@ const addPlayerInput = ref(null)
 
 // Scoreboard inline edit state
 const scoreSides = ['score1', 'score2']
-const editingScore = ref(null)
-const inlineScore = ref('')
-const inlineInput = ref(null)
+const courtStatusTones = { live: 'active', finished: 'success' }
 
 // Share state
 const showShareModal = ref(false)
 const shareUrl = ref('')
 
 const totalRounds = computed(() => game.value?.rounds.length || 0)
-const targetGames = computed(() =>
-  Math.round(totalRounds.value * game.value?.numCourts * 4 / (game.value?.players.length || 1))
-)
 const round = computed(() => game.value?.rounds[currentRound.value] || null)
+const restingNames = computed(() => (round.value?.resting || []).map(playerName))
+const confirmedInRound = computed(() =>
+  round.value?.courts.filter((court) => getFinalMatchResult(court, game.value)).length || 0
+)
 const roundNavRef = ref(null)
 const scrollLeftHint = ref(false)
 const scrollRightHint = ref(false)
@@ -419,7 +371,7 @@ function applyPlayerChange(newPlayers) {
   const activeIds = newPlayers.filter((p) => !p.inactive).map((p) => p.id)
   const result = regenerateRemainingRounds(game.value, activeIds, currentRound.value)
   if (result === null) {
-    alert('Gagal menyusun ulang jadwal. Coba lagi.')
+    alert('Could not reschedule the rounds. Try again.')
     return false
   }
   if (result.regeneratedFrom >= result.rounds.length) {
@@ -470,7 +422,7 @@ function openAddPlayer() {
 function confirmAddPlayer() {
   const name = newPlayerName.value.trim()
   if (!name) {
-    alert('Nama pemain tidak boleh kosong')
+    alert('Enter a player name.')
     return
   }
   const nextId = Math.max(0, ...game.value.players.map((p) => p.id)) + 1
@@ -493,15 +445,26 @@ function updateScrollHints() {
 function scrollActiveRoundIntoView() {
   nextTick(() => {
     const el = roundNavRef.value?.querySelector('.round-chip.active')
-    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    if (!el) return
+    const strip = roundNavRef.value
+    const chip = el.getBoundingClientRect()
+    const viewport = strip.getBoundingClientRect()
+    if (chip.left < viewport.left) strip.scrollLeft += chip.left - viewport.left
+    if (chip.right > viewport.right) strip.scrollLeft += chip.right - viewport.right
     updateScrollHints()
   })
 }
 
-watch(currentRound, scrollActiveRoundIntoView)
+watch(currentRound, (index) => {
+  sessionStorage.setItem(roundKey, String(index))
+  scrollActiveRoundIntoView()
+})
 
 // Re-evaluate hints when rounds are added/removed (strip may become scrollable)
-watch(totalRounds, () => nextTick(updateScrollHints))
+watch(totalRounds, (count) => {
+  currentRound.value = Math.min(currentRound.value, Math.max(0, count - 1))
+  nextTick(updateScrollHints)
+})
 
 // --- Scoreboard inline controls ---
 
@@ -515,6 +478,7 @@ function updateCourt(roundIndex, courtNum, update) {
 
 function addSet(courtNum) {
   updateCourt(currentRound.value, courtNum, (court) => {
+    if (court.confirmed) return false
     court.extraSets ??= []
     court.extraSets.push({ id: generateId(), score1: null, score2: null })
   })
@@ -523,7 +487,7 @@ function addSet(courtNum) {
 function removeSet(courtNum, setId) {
   updateCourt(currentRound.value, courtNum, (court) => {
     const index = court.extraSets?.findIndex((set) => set.id === setId) ?? -1
-    if (index < 0 || hasSetScore(court.extraSets[index])) return false
+    if (court.confirmed || index < 0 || hasSetScore(court.extraSets[index])) return false
     court.extraSets.splice(index, 1)
   })
 }
@@ -535,34 +499,26 @@ function findScoreSet(court, setId) {
 function adjustScore(courtNum, setId, side, delta) {
   updateCourt(currentRound.value, courtNum, (court) => {
     const set = findScoreSet(court, setId)
-    if (!set) return false
+    if (court.confirmed || !set || (delta < 0 && !set[side])) return false
     setScore(set, side, (set[side] ?? 0) + delta)
   })
 }
 
-function isEditing(courtNum, setId, side) {
-  const edit = editingScore.value
-  return edit?.roundIndex === currentRound.value && edit.courtNum === courtNum &&
-    edit.setId === setId && edit.side === side
-}
-
-function startInlineEdit(courtNum, set, side) {
-  if (game.value?.completed) return
-  editingScore.value = { roundIndex: currentRound.value, courtNum, setId: set.id ?? null, side }
-  inlineScore.value = set[side] ?? ''
-  nextTick(() => inlineInput.value?.[0]?.focus())
-}
-
-function commitInlineEdit() {
-  const edit = editingScore.value
-  if (!edit) return
-  editingScore.value = null
-  const value = inlineScore.value
-  updateCourt(edit.roundIndex, edit.courtNum, (court) => {
-    const set = findScoreSet(court, edit.setId)
-    if (!set) return false
-    setScore(set, edit.side, value)
+function editScore(roundNumber, courtNum, setId, side, value) {
+  const roundIndex = game.value.rounds.findIndex((item) => item.num === roundNumber)
+  updateCourt(roundIndex, courtNum, (court) => {
+    const set = findScoreSet(court, setId)
+    if (court.confirmed || !set) return false
+    setScore(set, side, value)
   })
+}
+
+function scoreButtonId(courtNum, setId, side) {
+  return `score-${courtNum}-${setId ?? 'first'}-${side}`
+}
+
+function pairNames(court, side) {
+  return (side === 'score1' ? court.pair1 : court.pair2).map(playerName).join(' and ')
 }
 
 function setScore(set, side, score) {
@@ -571,10 +527,6 @@ function setScore(set, side, score) {
     return
   }
   set[side] = Math.max(0, Math.trunc(score))
-  if (isClub.value) {
-    const otherSide = side === 'score1' ? 'score2' : 'score1'
-    set[otherSide] ??= 0
-  }
 }
 
 // --- Share ---
@@ -582,10 +534,7 @@ function setScore(set, side, score) {
 function openShare() {
   const { href } = router.resolve({ name: 'rotation', params: { gameId: props.gameId } })
   shareUrl.value = new URL(href, window.location.href).href
-  // Ensure game is pushed to Firestore before sharing
-  if (game.value) {
-    pushGame(game.value).catch(() => {})
-  }
+  shareGame(props.gameId)
   showShareModal.value = true
 }
 
@@ -595,9 +544,57 @@ function finishSession() {
   showFinishConfirm.value = true
 }
 
+function canConfirmResult(court) {
+  return !!getMatchResult(getMatchSets(court), !isClub.value)
+}
+
+function resultHint(court) {
+  const incomplete = getMatchSets(court).some((set) => set.score1 == null || set.score2 == null)
+  return incomplete ? 'Enter both scores in every set, including zero as needed.'
+    : 'Check any tied scores or add a deciding set.'
+}
+
+function confirmResult(courtNum) {
+  updateCourt(currentRound.value, courtNum, (court) => {
+    if (court.confirmed || !canConfirmResult(court)) return false
+    court.confirmed = true
+  })
+  nextTick(() => document.querySelector(`#lapangan-${courtNum} .court-result-action`)?.focus({ preventScroll: true }))
+}
+
+function reopenResult(courtNum) {
+  updateCourt(currentRound.value, courtNum, (court) => {
+    court.confirmed = false
+  })
+  nextTick(() => document.getElementById(scoreButtonId(courtNum, null, 'score1'))?.focus())
+}
+
+function matchLocation(match) {
+  return isSingleCourtClub.value ? 'Match ' + match.round : `Round ${match.round} · Court ${match.court}`
+}
+
+function goToUnfinishedMatch(match) {
+  showFinishConfirm.value = false
+  activeTab.value = 'skor'
+  currentRound.value = game.value.rounds.findIndex((item) => item.num === match.round)
+  nextTick(() => document.getElementById('lapangan-' + match.court)?.focus())
+}
+
+function selectTab(id) {
+  if (activeTab.value === id) return
+  activeTab.value = id
+  window.scrollTo({ top: 0 })
+  if (id === 'skor') scrollActiveRoundIntoView()
+}
+
 function confirmFinish() {
-  if (unfinishedClubMatches.value) return
-  updateGame(props.gameId, { completed: true })
+  if (!game.value || (isClub.value && unfinishedMatches.value.length)) return
+
+  const rounds = game.value.rounds.map((item) => ({
+    ...item,
+    courts: item.courts.map((court) => ({ ...court, confirmed: court.confirmed === true })),
+  }))
+  updateGame(props.gameId, { completed: true, rounds })
   showFinishConfirm.value = false
   openScoreboard()
 }
@@ -618,7 +615,7 @@ function confirmAddRound() {
 
   const newRound = generateNextRound(game.value)
   if (!newRound) {
-    alert('Gagal menghasilkan ronde baru. Coba lagi.')
+    alert('Could not create a new round. Try again.')
     return
   }
 
@@ -632,7 +629,7 @@ function confirmAddRound() {
 let resizeObserver = null
 
 onMounted(() => {
-  updateScrollHints()
+  scrollActiveRoundIntoView()
   resizeObserver = new ResizeObserver(updateScrollHints)
   if (roundNavRef.value) resizeObserver.observe(roundNavRef.value)
 })
@@ -646,642 +643,137 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.rotation {
-  padding: 16px;
-  padding-bottom: calc(88px + env(safe-area-inset-bottom));
-  max-width: 480px;
-  margin: 0 auto;
-}
-
-/* --- Bottom tab bar --- */
+.rotation { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 
 .tab-bar {
   position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 480px;
-  display: flex;
-  background: var(--card-bg);
-  border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom);
+  inset: auto 0 0;
   z-index: 50;
+  display: flex;
+  padding: 4px var(--page-gutter) max(4px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--card-bg);
 }
 
 .tab-btn {
-  flex: 1;
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 8px 0 6px;
-  background: none;
-  border: none;
+  gap: 3px;
+  min-height: 52px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-}
-
-.tab-btn .tab-emoji {
-  font-size: 20px;
-  line-height: 1.2;
-}
-
-.tab-btn.active {
-  color: var(--primary);
-}
-
-/* --- Shared pane/section styles --- */
-
-.tab-pane {
-  margin-top: 4px;
-}
-
-.section-title {
-  font-size: 16px;
-  margin: 0 0 12px;
-  color: var(--text-primary);
-}
-
-.player-group-label {
-  font-size: 14px;
-  overflow-wrap: anywhere;
-}
-
-.sb-club-name {
-  color: var(--primary);
   font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.input {
-  width: 100%;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-size: 16px;
-  box-sizing: border-box;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.error-hint {
-  text-align: center;
-  color: var(--danger);
-  font-size: 13px;
-  margin: 8px 0 0;
-}
-
-/* --- Pemain tab --- */
-
-.player-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.player-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.player-num {
-  width: 24px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  text-align: right;
-}
-
-.player-input {
-  flex: 1;
-}
-
-.player-input:disabled {
-  background: var(--tag-bg);
-  cursor: not-allowed;
-}
-
-.btn-icon {
-  width: 36px;
-  height: 36px;
-  border: none;
-  background: none;
-  color: var(--danger);
-  font-size: 16px;
+  font-weight: 700;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.btn-icon:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+.tab-btn.active { background: var(--primary-bg); color: var(--primary); }
+.round-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 12px; }
+.round-summary h2 { font-size: 22px; font-weight: 800; }
+.round-progress, .resting { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--text-secondary); font-size: 14px; }
+.round-progress { gap: 5px; }
+.round-progress :deep(svg), .resting :deep(svg) { width: 16px; height: 16px; color: var(--primary); }
+.resting { padding: 10px 12px; margin: 4px 0 16px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--card-bg); }
+.resting strong { display: inline-flex; align-items: center; gap: 7px; color: var(--text-primary); }
 
-.inactive-section {
-  margin-top: 24px;
-}
-
-.row-inactive {
-  opacity: 0.55;
-}
-
-.inactive-name {
-  flex: 1;
-  font-size: 15px;
-  color: var(--text-primary);
-}
-
-.restore-btn {
-  color: var(--primary);
-}
-
-.add-player-note {
-  margin-top: 8px;
-}
-
-/* --- Klasemen tab --- */
-
-/* Standings table wrapper (component root) — spacing before matches list */
-.standings-table-wrap {
-  margin-bottom: 24px;
-}
-
-.matches {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.match-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--card-bg);
-  border-radius: 10px;
-  gap: 8px;
-}
-
-.match-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.match-round {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--primary);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.match-teams {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-  flex-wrap: wrap;
-}
-
-.team {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.team-home { color: var(--green); }
-.team-away { color: var(--primary); }
-
-.team-vs {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.empty-matches {
-  text-align: center;
-  padding: 24px;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-/* Top bar */
-.rotation-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.topbar-title {
-  font-size: 18px;
-  margin: 0;
-  color: var(--text-primary);
-}
-
-.topbar-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-/* Round nav: horizontal scroll strip */
 .round-nav-scroll {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding: 2px 2px 10px;
   margin-bottom: 10px;
-  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
   scrollbar-width: none;
   scroll-snap-type: x proximity;
 }
-
-.round-nav-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-/* Fade hints on the edges: show only while there is more content cut off */
-.round-nav-scroll.fade-right {
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
-}
-
-.round-nav-scroll.fade-left {
-  -webkit-mask-image: linear-gradient(to left, black calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to left, black calc(100% - 24px), transparent 100%);
-}
-
-.round-nav-scroll.fade-left.fade-right {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
-}
+.round-nav-scroll.fade-right { mask-image: linear-gradient(to right, black calc(100% - 16px), transparent); }
+.round-nav-scroll.fade-left { mask-image: linear-gradient(to left, black calc(100% - 16px), transparent); }
+.round-nav-scroll.fade-left.fade-right { mask-image: linear-gradient(90deg, transparent, black 16px, black calc(100% - 16px), transparent); }
 
 .round-chip {
   flex-shrink: 0;
+  min-height: var(--size-control);
+  padding: 6px 15px;
   scroll-snap-align: start;
-  padding: 8px 16px;
-  border-radius: 20px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
   background: var(--card-bg);
   color: var(--text-primary);
   font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-}
-
-.round-chip.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-
-/* Play count chips */
-.play-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
-  padding: 10px 12px;
-  background: var(--card-bg);
-  border-radius: 10px;
-}
-
-.play-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--tag-bg);
-  color: var(--text-primary);
-}
-
-.play-chip .chip-count {
   font-weight: 700;
-  color: var(--primary);
-}
-
-.chip-done {
-  background: var(--green-bg);
-  color: var(--green);
-}
-.chip-done .chip-count {
-  color: var(--green);
-}
-
-/* Court cards */
-.courts {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.court-card {
-  background: var(--card-bg);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.court-header {
-  background: var(--primary);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.add-set-btn {
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.2);
-  color: #fff;
-  font: inherit;
   cursor: pointer;
 }
+.round-chip:hover { background: var(--surface-raised); }
+.round-chip:focus-visible { outline-offset: -3px; }
+.round-chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.round-chip.active:focus-visible { outline-color: var(--on-primary); }
 
+.courts { display: grid; align-items: start; gap: 14px; margin-bottom: 16px; }
+.court-card { container-type: inline-size; scroll-margin-top: 80px; }
+.court-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; }
+.court-header h3 { font-size: 16px; }
 .court-scoreboard {
-  padding: 12px 12px 16px;
-}
-
-.score-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.sb-players,
-.sb-score-controls {
-  flex: 1;
-  min-width: 0;
-}
-
-.sb-players {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.court-set {
-  margin-top: 8px;
-}
-
-.court-set + .court-set {
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
-.court-set-heading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.remove-set-btn {
-  padding: 2px 4px;
-  border: 0;
-  background: none;
-  color: var(--danger);
-  font: inherit;
-  cursor: pointer;
-}
-
-.sb-player-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-align: center;
-  word-break: break-word;
-}
-
-.sb-score-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.sb-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
-  font-size: 18px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.15s;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-}
-
-.sb-btn:active {
-  opacity: 0.7;
-}
-
-.sb-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.sb-minus {
-  background: #fee2e2;
-  color: #ef4444;
-}
-
-.sb-plus {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.sb-score {
-  border: 0;
-  background: transparent;
-  font-size: 28px;
-  font-weight: 800;
-  color: var(--text-primary);
-  min-width: 40px;
-  text-align: center;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 6px;
-  transition: background 0.15s;
-  user-select: none;
-}
-
-.sb-score:hover {
-  background: var(--tag-bg);
-}
-
-.sb-score-input {
-  width: 50px;
-  height: 40px;
-  font-size: 28px;
-  font-weight: 800;
-  text-align: center;
-  border: 2px solid var(--primary);
-  border-radius: 8px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  outline: none;
-  -moz-appearance: textfield;
-}
-
-.sb-score-input::-webkit-inner-spin-button,
-.sb-score-input::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.sb-vs {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-/* Actions */
-.rotation-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 24px;
-}
-
-.btn-standings {
-  border-color: var(--yellow);
-  color: var(--yellow);
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px 20px;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: opacity 0.15s;
-}
-.btn:active { opacity: 0.8; }
-.btn-full { width: 100%; }
-.btn-sm { padding: 8px 14px; font-size: 13px; }
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-success { background: var(--green); color: #fff; }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-outline {
-  background: transparent;
+  margin: 0 10px;
+  padding: 12px;
   border: 1px solid var(--border);
-  color: var(--text-primary);
+  border-radius: 10px;
+  background: var(--input-bg);
 }
-.btn-share {
-  border-color: var(--primary);
-  color: var(--primary);
+.court-scoreboard:last-child { margin-bottom: 10px; }
+.score-row { position: relative; display: flex; align-items: center; gap: 12px; }
+.sb-players { flex: 1; min-width: 0; display: grid; justify-items: center; gap: 2px; padding: 2px 6px; }
+.sb-player-name, .sb-club-name { overflow-wrap: anywhere; text-align: center; }
+.sb-player-name { font-size: 14px; font-weight: 700; }
+.sb-club-name { color: var(--primary); font-size: 12px; }
+.sb-vs { position: absolute; left: 50%; transform: translateX(-50%); color: var(--text-secondary); font-size: 10px; font-weight: 800; }
+.court-set { margin-top: 6px; }
+.court-set + .court-set { padding-top: 8px; border-top: 1px solid var(--border); }
+.court-set-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text-secondary); font-size: 13px; }
+.remove-set-btn { min-height: var(--size-control); padding-inline: 8px; border: 0; border-radius: var(--radius-control); background: none; color: var(--danger); cursor: pointer; }
+.court-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 10px; }
+.court-actions button { flex: 1; }
+.score-hint { flex-basis: 100%; color: var(--text-secondary); font-size: 13px; }
+
+.roster-pane { max-width: 42rem; padding: 16px; }
+.roster-pane .section-title { margin-bottom: 12px; }
+.player-group-label { font-size: 14px; overflow-wrap: anywhere; }
+.player-remove, .error-hint { color: var(--danger); }
+.error-hint { margin-top: 8px; font-size: 13px; }
+.inactive-section { margin-top: 20px; }
+.inactive-name { flex: 1; color: var(--text-secondary); }
+.restore-btn { color: var(--primary); }
+
+.standings-pane { display: grid; gap: 24px; align-items: start; }
+.confirm-text { color: var(--text-secondary); }
+.add-player-note { margin-top: 8px; }
+.unfinished-list { display: grid; gap: 6px; margin: 12px 0; list-style: none; }
+.unfinished-list button { width: 100%; justify-content: flex-start; }
+
+@media (min-width: 650px) {
+  .courts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .courts.single-court { grid-template-columns: minmax(0, 34rem); }
 }
 
-/* Confirmation modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+@media (min-width: 760px) {
+  .rotation { padding-bottom: 44px; }
+  .tab-bar {
+    position: static;
+    width: fit-content;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 26px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+  }
+  .tab-btn { flex: 0 0 auto; flex-direction: row; gap: 8px; min-height: 44px; font-size: 14px; }
 }
 
-.modal-container {
-  background: var(--card-bg);
-  width: 100%;
-  max-width: 340px;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.modal-title {
-  font-size: 17px;
-  margin: 0;
-  color: var(--text-primary);
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 20px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-body {
-  padding: 20px;
-}
-
-.confirm-text {
-  font-size: 15px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.modal-footer {
-  display: flex;
-  gap: 8px;
-  padding: 0 20px 20px;
-}
-
-.modal-footer .btn {
-  flex: 1;
+@media (min-width: 1040px) {
+  .courts:not(.single-court) { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .standings-pane { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 }
 </style>

@@ -1,7 +1,10 @@
 <template>
   <form class="club-config" @submit.prevent="createMatch">
     <section v-show="step === 1" class="setup-section">
-      <div v-for="(club, clubIndex) in clubs" :key="club.id" class="setup-card">
+      <p v-if="showRosterErrors && !rosterReady" class="setup-error" role="alert">
+        Enter each club name and both players in every pair before continuing.
+      </p>
+      <div v-for="(club, clubIndex) in clubs" :key="club.id" class="setup-card surface">
         <button
           type="button"
           class="club-toggle"
@@ -10,71 +13,78 @@
           @click="expandedClubId = expandedClubId === club.id ? null : club.id"
         >
           <strong>{{ clubLabel(club) }}</strong>
-          <span>{{ club.teams.length }} pasangan</span>
+          <span>{{ filledClubPlayers(club) }}/{{ club.teams.length * 2 }} players</span>
           <span aria-hidden="true">{{ expandedClubId === club.id ? '▴' : '▾' }}</span>
         </button>
+        <p v-if="showRosterErrors && !clubReady(club)" class="setup-error">
+          {{ !club.name.trim() ? 'Enter a club name.' : '' }}
+          {{ filledClubPlayers(club) < club.teams.length * 2 ? 'Enter all player names.' : '' }}
+        </p>
         <div v-show="expandedClubId === club.id" :id="'club-fields-' + club.id" class="club-fields">
           <div class="setup-row">
-            <input v-model="club.name" :aria-label="'Nama klub ' + (clubIndex + 1)" placeholder="Nama klub" />
-            <button v-if="clubs.length > 2" type="button" :aria-label="'Hapus klub ' + (clubIndex + 1)" @click="removeClub(clubIndex)">✕</button>
+            <label class="club-name">
+              Club name
+              <input class="input" v-model="club.name" :aria-invalid="showRosterErrors && !club.name.trim()" />
+            </label>
+            <button v-if="clubs.length > 2" type="button" class="action-button ghost icon remove-field" :aria-label="'Remove club ' + (clubIndex + 1)" @click="removeClub(clubIndex)"><AppIcon name="close" /></button>
           </div>
 
           <div v-for="(team, teamIndex) in club.teams" :key="team.id" class="team-fields">
             <div class="setup-row">
-              <strong>Team {{ teamIndex + 1 }}</strong>
-              <button v-if="club.teams.length > 1" type="button" :aria-label="'Hapus Team ' + (teamIndex + 1)" @click="removeTeam(club, teamIndex)">✕</button>
+              <strong>Pair {{ teamIndex + 1 }}</strong>
+              <button v-if="club.teams.length > 1" type="button" class="action-button ghost icon remove-field" :aria-label="'Remove pair ' + (teamIndex + 1)" @click="removeTeam(club, teamIndex)"><AppIcon name="close" /></button>
             </div>
             <div class="pair-fields">
               <label v-for="(player, playerIndex) in team.players" :key="player.id">
-                Pemain {{ playerIndex + 1 }}
-                <input v-model="player.name" :placeholder="'Nama pemain ' + (playerIndex + 1)" />
+                Player {{ playerIndex + 1 }}
+                <input class="input" v-model="player.name" :aria-invalid="showRosterErrors && !player.name.trim()" />
               </label>
             </div>
           </div>
 
-          <button type="button" @click="club.teams.push(newTeam())">+ Tambah Pasangan</button>
+          <button type="button" class="action-button" @click="club.teams.push(newTeam())">+ Add pair</button>
         </div>
       </div>
 
-      <button type="button" class="full-width" @click="addClub">+ Tambah Klub</button>
+      <button type="button" class="action-button full-width" @click="addClub">+ Add club</button>
     </section>
 
-    <section v-show="step === 2" class="setup-section">
+    <section v-show="step === 2" class="setup-section schedule-panel">
       <label class="setup-row court-count">
-        <strong>Jumlah Lapangan</strong>
-        <select v-model.number="numCourts">
+        <strong>Number of courts</strong>
+        <select class="input" v-model.number="numCourts">
           <option v-for="count in 6" :key="count" :value="count">{{ count }}</option>
         </select>
       </label>
 
       <fieldset class="schedule-options">
-        <legend>Cara Pilih Lawan</legend>
+        <legend>How to choose opponents</legend>
         <label><input v-model="method" type="radio" name="schedule-method" value="random" /> Random</label>
         <label><input v-model="method" type="radio" name="schedule-method" value="manual" /> Manual</label>
       </fieldset>
 
       <div class="setup-row">
-        <p aria-live="polite"><strong>{{ matches.length }} match</strong> · Total harus ganjil</p>
-        <button type="button" @click="addMatch">+ Tambah Match</button>
+        <p aria-live="polite"><strong>{{ matches.length }} {{ matches.length === 1 ? 'match' : 'matches' }}</strong> · The total must be odd</p>
+        <button type="button" class="action-button" @click="addMatch">+ Add match</button>
       </div>
-      <button v-if="method === 'random'" type="button" class="full-width" :disabled="!rosterReady" @click="randomize">
-        Acak Lawan &amp; Urutan
+      <button v-if="method === 'random'" type="button" class="action-button full-width" :disabled="!rosterReady" @click="randomize">
+        Randomize pairings and order
       </button>
 
-      <fieldset v-for="(match, index) in matches" :key="match.id" class="setup-card">
+      <fieldset v-for="(match, index) in matches" :key="match.id" class="setup-card surface">
         <legend>Match {{ index + 1 }}</legend>
         <p v-if="numCourts > 1" class="match-location">{{ matchLocations.get(match.id) }}</p>
         <div class="match-pairs">
-          <select v-model="match.home" :aria-label="'Pasangan pertama di match ' + (index + 1)">
-            <option :value="null">Pilih pasangan pertama</option>
+          <select class="input" v-model="match.home" :aria-label="'First pair in match ' + (index + 1)">
+            <option :value="null">Select the first pair</option>
             <optgroup v-for="club in clubs" :key="club.id" :label="clubLabel(club)">
               <option v-for="(team, teamIndex) in club.teams" :key="team.id" :value="team.id" :disabled="club.id === teams.get(match.away)?.club.id">
                 {{ teamLabel(team, teamIndex) }}
               </option>
             </optgroup>
           </select>
-          <select v-model="match.away" :aria-label="'Pasangan kedua di match ' + (index + 1)">
-            <option :value="null">Pilih pasangan kedua</option>
+          <select class="input" v-model="match.away" :aria-label="'Second pair in match ' + (index + 1)">
+            <option :value="null">Select the second pair</option>
             <optgroup v-for="club in clubs" :key="club.id" :label="clubLabel(club)">
               <option v-for="(team, teamIndex) in club.teams" :key="team.id" :value="team.id" :disabled="club.id === teams.get(match.home)?.club.id">
                 {{ teamLabel(team, teamIndex) }}
@@ -83,22 +93,23 @@
           </select>
         </div>
         <div class="match-actions">
-          <button type="button" :disabled="index === 0" @click="moveMatch(index, -1)" :aria-label="'Naikkan match ' + (index + 1)">↑</button>
-          <button type="button" :disabled="index === matches.length - 1" @click="moveMatch(index, 1)" :aria-label="'Turunkan match ' + (index + 1)">↓</button>
-          <button type="button" :disabled="matches.length === 1" @click="matches.splice(index, 1)" :aria-label="'Hapus match ' + (index + 1)">Hapus</button>
+          <button type="button" class="action-button" :disabled="index === 0" @click="moveMatch(index, -1)" :aria-label="'Move match ' + (index + 1) + ' up'">↑</button>
+          <button type="button" class="action-button" :disabled="index === matches.length - 1" @click="moveMatch(index, 1)" :aria-label="'Move match ' + (index + 1) + ' down'">↓</button>
+          <button type="button" class="action-button" :disabled="matches.length === 1" @click="matches.splice(index, 1)" :aria-label="'Remove match ' + (index + 1)">Remove</button>
         </div>
       </fieldset>
     </section>
 
     <template v-if="step === 2">
       <p v-if="validationMessage" class="setup-error" aria-live="polite">{{ validationMessage }}</p>
-      <button type="submit" class="create-button" :disabled="!!validationMessage">Buat Pertandingan</button>
+      <button type="submit" class="action-button primary create-button" :disabled="!!validationMessage">Create session</button>
     </template>
   </form>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import AppIcon from './AppIcon.vue'
 import { createClubGame, groupClubMatches, randomClubMatches } from '../composables/clubMatches.js'
 
 const emit = defineEmits(['create'])
@@ -107,6 +118,7 @@ const props = defineProps({
 })
 const clubs = ref([])
 const expandedClubId = ref(null)
+const showRosterErrors = ref(false)
 const matches = ref([])
 const method = ref('random')
 const numCourts = ref(1)
@@ -143,34 +155,51 @@ const teams = computed(() => {
 
 const plannedRounds = computed(() => groupClubMatches(matches.value, numCourts.value))
 const matchLocations = computed(() => new Map(plannedRounds.value.flatMap((round, roundIndex) =>
-  round.map((match, courtIndex) => [match.id, `Ronde ${roundIndex + 1} · Lapangan ${courtIndex + 1}`])
+  round.map((match, courtIndex) => [match.id, `Round ${roundIndex + 1} · Court ${courtIndex + 1}`])
 )))
 
-const rosterReady = computed(() => clubs.value.length >= 2 && clubs.value.every((club) =>
-  club.name.trim() && club.teams.length && club.teams.every((team) =>
-    team.players.every((player) => player.name.trim())
-  )
-))
+const rosterReady = computed(() => clubs.value.length >= 2 && clubs.value.every(clubReady))
+
+function filledClubPlayers(club) {
+  return club.teams.flatMap((team) => team.players).filter((player) => player.name.trim()).length
+}
+
+function clubReady(club) {
+  return !!club.name.trim() && filledClubPlayers(club) === club.teams.length * 2
+}
+
+function validateRoster() {
+  if (rosterReady.value) return true
+  showRosterErrors.value = true
+  const firstIncomplete = clubs.value.find((club) => !clubReady(club))
+  if (firstIncomplete) {
+    expandedClubId.value = firstIncomplete.id
+    nextTick(() => document.getElementById('club-fields-' + firstIncomplete.id)?.querySelector('[aria-invalid="true"]')?.focus())
+  }
+  return false
+}
+
+defineExpose({ validateRoster })
 
 const validationMessage = computed(() => {
-  if (matches.value.length % 2 === 0) return 'Tambah atau hapus satu match supaya totalnya ganjil.'
-  if (!rosterReady.value) return 'Isi nama klub dan kedua pemain di setiap pasangan.'
+  if (matches.value.length % 2 === 0) return 'Add or remove a match so the total is odd.'
+  if (!rosterReady.value) return 'Enter each club name and both players in every pair.'
   if (matches.value.some(({ home, away }) => {
     const first = teams.value.get(home)
     const second = teams.value.get(away)
     return !first || !second || first.club.id === second.club.id
-  })) return 'Isi setiap match dengan dua pasangan dari klub berbeda.'
+  })) return 'Choose two pairs from different clubs for each match.'
   return ''
 })
 
 function clubLabel(club) {
-  return club.name.trim() || 'Klub ' + (clubs.value.indexOf(club) + 1)
+  return club.name.trim() || 'Club ' + (clubs.value.indexOf(club) + 1)
 }
 
 function teamLabel(team, index) {
   const names = team.players.map((player) => player.name.trim()).filter(Boolean)
   const club = teams.value.get(team.id).club
-  return [clubLabel(club), 'Team ' + (index + 1), names.join(' & ')].filter(Boolean).join(' · ')
+  return [clubLabel(club), 'Pair ' + (index + 1), names.join(' & ')].filter(Boolean).join(' · ')
 }
 
 function clearRemovedTeams() {
@@ -222,10 +251,7 @@ function createMatch() {
   display: grid;
   gap: 12px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card-bg);
+  padding: 14px;
 }
 
 .club-toggle {
@@ -233,8 +259,12 @@ function createMatch() {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
+  min-height: var(--size-control);
   padding: 4px 0;
   border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
   text-align: left;
 }
 
@@ -276,16 +306,6 @@ legend {
   min-width: 0;
 }
 
-select,
-input:not([type="radio"]) {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font: inherit;
-}
 
 .pair-fields label {
   font-size: 13px;
@@ -330,35 +350,15 @@ input:not([type="radio"]) {
   justify-content: flex-end;
 }
 
-button {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card-bg);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .full-width { width: 100%; }
-
-.create-button {
-  padding: 12px;
-  border: 0;
-  background: var(--primary);
-  color: #fff;
-  font-size: 16px;
-}
+.remove-field { color: var(--danger); }
+.create-button { width: 100%; }
 
 .setup-error {
   color: var(--danger);
   font-size: 13px;
 }
+
+.club-name { display: grid; flex: 1; min-width: 0; gap: 4px; font-size: 14px; }
+.setup-section [aria-invalid="true"] { border-color: var(--danger); }
 </style>

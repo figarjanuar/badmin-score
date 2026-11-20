@@ -1,426 +1,259 @@
 <template>
-  <div class="dashboard">
-    <div class="dashboard-header">
-      <div class="app-icon">🏸</div>
-      <h1>BadminScore</h1>
-      <p class="subtitle">Atur jadwal main badminton dengan adil</p>
-      <button v-if="showInstallButton" class="btn btn-outline btn-install" @click="handleInstall">
-        📲 Pasang Aplikasi
-      </button>
-    </div>
-
-    <div v-if="games.length === 0" class="empty-state">
-      <div class="empty-icon">🏸</div>
-      <p class="empty-text">Belum ada game nih!</p>
-      <p class="empty-hint">Buat game baru dan atur rotasi pemain dengan adil</p>
-      <button class="btn btn-primary btn-large" @click="router.push({ name: 'config' })">
-        ➕ Buat Game Baru
-      </button>
-    </div>
-
-    <div v-else class="game-list">
-      <div
-        v-for="game in games"
-        :key="game.id"
-        class="game-card"
-        @click="openGame(game.id)"
-      >
-        <div class="game-card-info">
-          <div class="game-card-name">{{ game.name || 'Game ' + formatDate(game.createdAt) }}</div>
-        </div>
-        <div class="game-card-status">
-          <span v-if="game.synced" class="badge badge-synced">☁️ Sync</span>
-          <span v-if="game.completed" class="badge badge-done">Selesai</span>
-          <span v-else class="badge badge-progress">Berjalan</span>
-          <button
-            class="delete-btn"
-            title="Hapus game"
-            @click.stop="askDelete(game)"
-          >🗑️</button>
+  <section class="page dashboard">
+    <header class="dashboard-hero">
+      <img class="hero-image" :src="courtPhoto" alt="" width="1280" height="853" fetchpriority="high" />
+      <div class="hero-copy">
+        <h1 class="page-title">Badminton<br />sessions<span>.</span></h1>
+        <p>Schedule rotations, record scores, and review results.</p>
+        <div class="hero-actions">
+          <RouterLink class="action-button primary" :to="{ name: 'config' }">
+            <AppIcon name="plus" /> New session
+          </RouterLink>
+          <button v-if="showInstallButton" class="action-button install-button" type="button" @click="handleInstall">
+            <AppIcon name="download" /> Install app
+          </button>
         </div>
       </div>
-    </div>
+    </header>
 
-    <!-- Install Help Modal (iOS) -->
-    <div v-if="showIosHelp" class="modal-overlay" @click.self="showIosHelp = false">
-      <div class="modal-container">
-        <div class="modal-header">
-          <h2 class="modal-title">📲 Pasang Aplikasi</h2>
-          <button class="modal-close" @click="showIosHelp = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <ol class="install-steps">
-            <li>Buka menu <strong>Bagikan</strong> (ikon ⬆️) di Safari</li>
-            <li>Pilih <strong>Add to Home Screen</strong></li>
-            <li>Tekan <strong>Add</strong> — BadminScore terpasang di layar utama</li>
-          </ol>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-primary" @click="showIosHelp = false">Mengerti</button>
-        </div>
+    <section class="session-section" aria-labelledby="session-heading">
+      <header class="session-heading">
+        <h2 id="session-heading" class="section-title">Recent sessions</h2>
+        <span v-if="games.length" class="muted">{{ games.length }} {{ games.length === 1 ? 'session' : 'sessions' }}</span>
+      </header>
+      <div v-if="!games.length" class="empty-state">
+        <h3>No sessions yet</h3>
+        <p>Set up a player rotation or a club match to get started.</p>
       </div>
-    </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div v-if="gameToDelete" class="modal-overlay" @click.self="gameToDelete = null">
-      <div class="modal-container">
-        <div class="modal-header">
-          <h2 class="modal-title">🗑️ Hapus Game?</h2>
-          <button class="modal-close" @click="gameToDelete = null">✕</button>
-        </div>
-        <div class="modal-body">
-          <p class="confirm-text">
-            Game <strong>"{{ gameToDelete.name || 'Game ' + formatDate(gameToDelete.createdAt) }}"</strong>
-            akan dihapus permanen dari perangkat ini{{ gameToDelete.synced ? ' dan dari Firestore' : '' }}.
+      <div v-else class="game-list surface">
+        <article v-for="{ game, confirmed, total } in sessions" :key="game.id" class="game-card">
+          <div class="game-heading">
+            <span class="game-icon"><AppIcon :name="game.mode === 'club' ? 'players' : 'court'" /></span>
+            <div class="game-identity">
+              <p class="game-mode">{{ game.mode === 'club' ? 'Club vs Club' : 'Player rotation' }}</p>
+              <h3>{{ game.name || 'Session ' + formatDate(game.createdAt) }}</h3>
+              <p class="game-meta">
+                <AppIcon name="calendar" />
+                {{ formatDate(game.createdAt) }} · {{ game.numCourts }} {{ game.numCourts === 1 ? 'court' : 'courts' }}
+              </p>
+            </div>
+          </div>
+          <div class="game-progress" :data-completed="game.completed">
+            <StatusBadge :tone="game.completed ? 'success' : 'active'">{{ game.completed ? 'Completed' : 'In progress' }}</StatusBadge>
+            <progress v-if="total" :value="confirmed" :max="total" :aria-label="game.name + ' results confirmed'"></progress>
+            <span class="game-meta">{{ confirmed }} of {{ total }} results confirmed</span>
+          </div>
+          <p class="game-meta game-sync" :data-sync="getSyncStatus(game.id)">
+            <AppIcon name="cloud" /> {{ syncLabels[getSyncStatus(game.id)] }}
           </p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" @click="gameToDelete = null">Batal</button>
-          <button class="btn btn-danger" @click="confirmDelete">🗑️ Ya, Hapus</button>
-        </div>
+          <div class="game-actions">
+            <RouterLink class="action-button session-link" :to="{ name: game.completed ? 'scoreboard' : 'rotation', params: { gameId: game.id } }">
+              {{ game.completed ? 'View results' : 'Resume session' }} <AppIcon name="arrow" />
+            </RouterLink>
+            <details class="game-menu">
+              <summary class="action-button ghost icon" :aria-label="'Options for ' + game.name"><AppIcon name="more" /></summary>
+              <button type="button" class="action-button" @click="gameToDelete = game">Delete session</button>
+            </details>
+          </div>
+        </article>
       </div>
-    </div>
+    </section>
 
-    <button
-      v-if="games.length > 0"
-      class="fab"
-      aria-label="Buat Game Baru"
-      @click="router.push({ name: 'config' })"
-    >
-      ➕
-    </button>
-  </div>
+    <AppDialog v-if="showIosHelp" title="Install app" @close="showIosHelp = false">
+      <ol class="install-steps">
+        <li>Open the <strong>Share</strong> menu in Safari.</li>
+        <li>Choose <strong>Add to Home Screen</strong>.</li>
+        <li>Tap <strong>Add</strong> to install BadminScore.</li>
+      </ol>
+      <template #actions>
+        <button type="button" class="action-button primary" @click="showIosHelp = false">Got it</button>
+      </template>
+    </AppDialog>
+
+    <AppDialog v-if="gameToDelete" title="Delete session?" @close="gameToDelete = null">
+      <p><strong>{{ gameToDelete.name }}</strong></p>
+      <p class="delete-description">Remove this session and any unsynced changes from this device. An existing shared copy stays online.</p>
+      <p v-if="firebaseReady" class="delete-description">Delete everywhere also removes the shared copy once the server receives the request.</p>
+      <template #actions>
+        <button type="button" class="action-button" @click="gameToDelete = null">Cancel</button>
+        <button type="button" class="action-button" @click="confirmDelete(true)">Remove from this device</button>
+        <button v-if="firebaseReady" type="button" class="action-button danger" @click="confirmDelete(false)">Delete everywhere</button>
+      </template>
+    </AppDialog>
+  </section>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
+import { firebaseReady } from '../config/firebase.js'
+import { getFinalMatchResult } from '../composables/matchScores.js'
+import AppIcon from '../components/AppIcon.vue'
+import AppDialog from '../components/AppDialog.vue'
+import StatusBadge from '../components/StatusBadge.vue'
+import courtPhoto from '../assets/court-hero.webp'
 
-const router = useRouter()
-const { getGames, deleteGame } = useStorage()
-
+const { getGames, deleteGame, getSyncStatus } = useStorage()
 const { showInstallButton, install } = usePwaInstall()
 const showIosHelp = ref(false)
+const gameToDelete = ref(null)
+const games = computed(() => getGames())
+const sessions = computed(() => [...games.value]
+  .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
+  .map((game) => {
+    const courts = game.rounds.flatMap((round) => round.courts)
+    return {
+      game,
+      total: courts.length,
+      confirmed: courts.filter((court) => getFinalMatchResult(court, game)).length,
+    }
+  }))
+
+const syncLabels = {
+  local: 'Saved on this device',
+  pending: 'Syncing…',
+  ready: 'Saved online',
+  error: 'Sync failed · Saved on this device',
+}
 
 function handleInstall() {
-  // Chrome/Edge langsung prompt; iOS tidak punya prompt → tampilkan instruksi
   if (!install()) showIosHelp.value = true
 }
 
-const games = computed(() => getGames())
-
-// Delete confirmation state
-const gameToDelete = ref(null)
-
-function openGame(id) {
-  const game = getGames().find((g) => g.id === id)
-  const view = game?.completed ? 'scoreboard' : 'rotation'
-  router.push({ name: view, params: { gameId: id } })
-}
-
-function askDelete(game) {
-  gameToDelete.value = game
-}
-
-function confirmDelete() {
-  if (gameToDelete.value) {
-    deleteGame(gameToDelete.value.id)
-  }
+function confirmDelete(deviceOnly) {
+  deleteGame(gameToDelete.value.id, { deviceOnly })
   gameToDelete.value = null
 }
 
 function formatDate(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
 }
 </script>
 
 <style scoped>
-.dashboard {
-  padding: 24px 16px 80px;
+.dashboard-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  min-height: clamp(320px, 36vw, 400px);
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: #14241a;
 }
 
-.dashboard-header {
-  text-align: center;
-  margin-bottom: 32px;
+.hero-image, .dashboard-hero::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
 }
 
-.app-icon {
-  font-size: 48px;
-  margin-bottom: 8px;
+.hero-image { object-fit: cover; object-position: center 61%; }
+
+.dashboard-hero::after {
+  content: '';
+  background: linear-gradient(90deg, #14241a 12%, rgb(20 36 26 / 92%) 30%, rgb(20 36 26 / 15%) 69%, transparent);
 }
 
-.dashboard-header h1 {
-  font-size: 28px;
-  margin: 0;
-  color: var(--text-primary);
-}
+.hero-copy { padding: clamp(20px, 6vw, 56px); }
+.hero-copy h1 { font-size: clamp(64px, 9vw, 112px); text-transform: uppercase; line-height: 0.82; }
+.hero-copy h1 span { color: var(--primary); }
+.hero-copy p { max-width: 31ch; margin-top: 20px; color: var(--text-primary); }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 
-.subtitle {
-  color: var(--text-secondary);
-  margin: 4px 0 0;
-  font-size: 14px;
-}
-
-.btn-install {
-  margin-top: 16px;
-  font-size: 14px;
-  padding: 10px 20px;
-}
-
-.install-steps {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 15px;
-  color: var(--text-secondary);
-  line-height: 1.9;
-}
-
-/* Empty state */
-.empty-state {
-  text-align: center;
-  padding: 48px 16px;
-}
-
-.empty-icon {
-  font-size: 72px;
-  margin-bottom: 16px;
-  opacity: 0.4;
-}
-
-.empty-text {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 8px;
-}
-
-.empty-hint {
-  color: var(--text-secondary);
-  font-size: 14px;
-  margin: 0 0 32px;
-}
-
-/* Game list */
-.game-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.session-section { margin-top: clamp(28px, 4vw, 44px); }
+.session-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.session-heading span { font-size: 13px; }
 
 .game-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.5fr) 215px;
   align-items: center;
-  justify-content: space-between;
-  background: var(--card-bg);
-  border-radius: 12px;
-  padding: 16px;
-  cursor: pointer;
-  transition: transform 0.15s;
+  gap: 12px 24px;
+  padding: 18px;
 }
+.game-card + .game-card { border-top: 1px solid var(--border); }
 
-.game-card:active {
-  transform: scale(0.98);
-}
-
-.game-card-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.game-card-meta {
-  font-size: 13px;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.meta-dot {
-  opacity: 0.4;
-}
-
-.badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
-  white-space: nowrap;
-}
-
-.badge-done {
-  background: var(--green-bg);
-  color: var(--green);
-}
-
-.badge-progress {
-  background: var(--yellow-bg);
-  color: var(--yellow);
-}
-
-.badge-synced {
+.game-heading { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.game-icon {
+  display: grid;
+  flex: 0 0 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: var(--radius-control);
   background: var(--primary-bg);
   color: var(--primary);
 }
 
-.game-card-status {
-  display: flex;
-  align-items: center;
+.game-identity { min-width: 0; }
+.game-identity h3 { font-size: 19px; line-height: 1.2; overflow-wrap: anywhere; }
+.game-mode { margin-bottom: 3px; color: var(--primary); font-size: 11px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+.game-meta { display: flex; gap: 5px; align-items: center; color: var(--text-secondary); font-size: 13px; }
+.game-meta :deep(svg) { width: 15px; height: 15px; }
+.game-identity .game-meta { margin-top: 5px; }
+.game-sync { grid-column: 1 / -1; font-size: 12px; }
+.game-meta[data-sync="error"] { color: var(--danger); }
+.game-progress {
+  --progress-color: var(--yellow);
+  display: grid;
   gap: 6px;
+  align-content: center;
 }
-
-.delete-btn {
+.game-progress[data-completed="true"] { --progress-color: var(--green); }
+.game-progress progress {
+  appearance: none;
+  width: min(100%, 164px);
+  height: 5px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
   background: var(--tag-bg);
-  border: none;
-  font-size: 14px;
-  cursor: pointer;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.15s;
+  color: var(--progress-color);
+}
+.game-progress progress::-webkit-progress-bar { background: var(--tag-bg); }
+.game-progress progress::-webkit-progress-value { background: var(--progress-color); }
+.game-progress progress::-moz-progress-bar { background: var(--progress-color); }
+.game-actions { display: flex; align-items: center; justify-content: end; gap: 4px; grid-column: 3; grid-row: 1; }
+.session-link { white-space: nowrap; }
+.session-link :deep(svg) { width: 16px; height: 16px; }
+
+.game-menu { position: relative; }
+.game-menu summary { list-style: none; }
+.game-menu summary::-webkit-details-marker { display: none; }
+.game-menu button {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 2;
+  box-shadow: var(--shadow-popover);
+  color: var(--danger);
+  white-space: nowrap;
+}
+.install-steps { padding-left: 20px; }
+.delete-description { margin-top: 8px; color: var(--text-secondary); }
+
+@media (max-width: 700px) {
+  .game-card { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+  .game-heading, .game-progress, .game-sync { grid-column: 1 / -1; }
+  .game-heading { grid-row: 1; padding-inline-end: 48px; }
+  .game-progress { grid-row: 2; }
+  .game-sync { grid-row: 3; }
+  .game-actions { display: contents; }
+  .game-menu { grid-column: 2; grid-row: 1; align-self: start; }
+  .session-link { grid-column: 1 / -1; justify-self: start; grid-row: 4; }
 }
 
-.delete-btn:hover {
-  background: #fee2e2;
-}
-
-.delete-btn:active {
-  opacity: 0.7;
-}
-
-/* Delete confirmation modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.modal-container {
-  background: var(--card-bg);
-  width: 100%;
-  max-width: 340px;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.modal-title {
-  font-size: 17px;
-  margin: 0;
-  color: var(--text-primary);
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 20px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-body {
-  padding: 20px;
-}
-
-.confirm-text {
-  font-size: 15px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.modal-footer {
-  display: flex;
-  gap: 8px;
-  padding: 0 20px 20px;
-}
-
-.modal-footer .btn {
-  flex: 1;
-}
-
-.btn-danger {
-  background: var(--danger);
-  color: #fff;
-}
-
-.btn-outline {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-}
-
-/* FAB */
-.fab {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: none;
-  background: var(--primary);
-  color: #fff;
-  font-size: 24px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.15s;
-}
-
-.fab:active {
-  transform: scale(0.92);
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 24px;
-  border-radius: 10px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: opacity 0.15s;
-}
-.btn:active { opacity: 0.8; }
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-}
-.btn-large {
-  padding: 14px 32px;
-  font-size: 18px;
-  border-radius: 12px;
+@media (max-width: 550px) {
+  .dashboard-hero { min-height: 310px; align-items: end; }
+  .hero-image { object-position: 62% 25%; }
+  .dashboard-hero::after { background: linear-gradient(0deg, #14241a 12%, rgb(20 36 26 / 91%) 33%, rgb(20 36 26 / 32%) 89%); }
+  .hero-copy h1 { font-size: clamp(56px, 14vw, 74px); }
+  .hero-copy p { font-size: 14px; margin-top: 12px; }
+  .hero-actions { margin-top: 14px; }
 }
 </style>

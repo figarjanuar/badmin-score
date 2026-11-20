@@ -1,3 +1,6 @@
+import '@fontsource-variable/dm-sans'
+import '@fontsource/barlow-condensed/latin-700.css'
+import './style.css'
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router.js'

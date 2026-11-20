@@ -1,50 +1,69 @@
 <template>
-  <div class="standings-table-wrap">
-    <p v-if="winnerMessage" class="winner">{{ winnerMessage }}</p>
-    <table class="standings-table">
-      <thead>
-        <tr>
-          <th class="col-rank">#</th>
-          <th class="col-name">{{ isClub ? 'Klub' : 'Nama' }}</th>
-          <th class="col-num">M</th>
-          <th class="col-num">W</th>
-          <th class="col-num">L</th>
-          <th class="col-num" title="Selisih poin: poin dicetak dikurangi poin kemasukan">Diff</th>
-          <th class="col-num">WR</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="(item, idx) in standings"
-          :key="item.id"
-          :class="{
-            'row-gold': (item.rank ?? idx + 1) === 1 && item.gamesPlayed > 0,
-            'row-silver': (item.rank ?? idx + 1) === 2 && item.gamesPlayed > 0,
-            'row-bronze': (item.rank ?? idx + 1) === 3 && item.gamesPlayed > 0,
-            'row-inactive': item.inactive,
-          }"
-        >
-          <td class="col-rank">{{ item.rank ?? idx + 1 }}</td>
-          <td class="col-name">{{ item.name }}</td>
-          <td class="col-num">{{ item.gamesPlayed }}/{{ item.totalGames }}</td>
-          <td class="col-num col-win">{{ item.wins }}</td>
-          <td class="col-num col-loss">{{ item.losses }}</td>
-          <td class="col-num">{{ item.pointDiff > 0 ? '+' : '' }}{{ item.pointDiff }}</td>
-          <td class="col-num col-wr">{{ item.winRate }}%</td>
-        </tr>
-      </tbody>
-    </table>
-    <p class="standings-note">
-      Diff = poin dicetak − poin kemasukan.
-      {{ isClub ? 'Urutan klasemen: WR, lalu Diff.' : 'Urutan klasemen: menang, Diff, lalu WR.' }}
-    </p>
-  </div>
+  <section class="standings-table-wrap" :aria-labelledby="headingId">
+    <div class="standings-heading">
+      <h2 :id="headingId">{{ isClub ? 'Club standings' : 'Standings' }}</h2>
+      <div ref="info" class="standings-info" @pointerenter="showOnHover" @pointerleave="hovered = false">
+        <button type="button" class="action-button icon info-button" aria-label="How standings are calculated"
+          :aria-expanded="showInfo" :aria-controls="infoId" @click="toggleInfo">
+          <AppIcon name="info" />
+        </button>
+        <div v-show="showInfo" :id="infoId" class="info-panel">
+          <dl>
+            <div><dt>Played</dt><dd>Confirmed matches / scheduled matches</dd></div>
+            <div><dt>± Pts</dt><dd>Points scored minus points conceded</dd></div>
+            <div><dt>Win %</dt><dd>Percentage of confirmed matches won</dd></div>
+          </dl>
+          <p>{{ isClub
+            ? 'Ranked by win percentage, then point difference.'
+            : 'Ranked by wins, then point difference, then win percentage.' }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="standings-surface surface">
+      <p v-if="winnerMessage" class="winner">{{ winnerMessage }}</p>
+      <p v-if="!hasResults" class="empty-standings">No confirmed results yet.</p>
+      <table v-else class="standings-table">
+        <thead>
+          <tr>
+            <th scope="col" class="col-rank" aria-label="Rank">#</th>
+            <th scope="col" class="col-name">{{ isClub ? 'Club' : 'Player' }}</th>
+            <th scope="col" class="col-num">Played</th>
+            <th scope="col" class="col-num">Won</th>
+            <th scope="col" class="col-num">Lost</th>
+            <th scope="col" class="col-num" aria-label="Point difference">± Pts</th>
+            <th scope="col" class="col-num" aria-label="Win percentage">Win %</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(item, idx) in standings"
+            :key="item.id"
+            :class="{
+              'row-gold': (item.rank ?? idx + 1) === 1 && item.gamesPlayed > 0,
+              'row-silver': (item.rank ?? idx + 1) === 2 && item.gamesPlayed > 0,
+              'row-bronze': (item.rank ?? idx + 1) === 3 && item.gamesPlayed > 0,
+              'row-inactive': item.inactive,
+            }"
+          >
+            <td class="col-rank">{{ item.rank ?? idx + 1 }}</td>
+            <th scope="row" class="col-name">{{ item.name }}</th>
+            <td class="col-num">{{ item.gamesPlayed }}/{{ item.totalGames }}</td>
+            <td class="col-num col-win">{{ item.wins }}</td>
+            <td class="col-num col-loss">{{ item.losses }}</td>
+            <td class="col-num">{{ item.pointDiff > 0 ? '+' : '' }}{{ item.pointDiff }}</td>
+            <td class="col-num col-wr">{{ item.winRate }}%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useId } from 'vue'
 import { useStorage } from '../composables/useStorage.js'
 import { useStandings } from '../composables/useStandings.js'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   gameId: { type: String, required: true },
@@ -54,23 +73,94 @@ const { getGame } = useStorage()
 const game = computed(() => getGame(props.gameId))
 const { standings } = useStandings(game)
 const isClub = computed(() => game.value?.mode === 'club')
+const hasResults = computed(() => standings.value.some((item) => item.gamesPlayed > 0))
+const headingId = useId()
+const infoId = useId()
+const info = ref(null)
+const hovered = ref(false)
+const pinned = ref(false)
+const showInfo = computed(() => hovered.value || pinned.value)
+
+function showOnHover(event) {
+  if (event.pointerType === 'mouse') hovered.value = true
+}
+
+function dismissInfo() {
+  pinned.value = false
+  hovered.value = false
+}
+
+function toggleInfo() {
+  if (pinned.value) dismissInfo()
+  else pinned.value = true
+}
+
+function onPointerDown(event) {
+  if (showInfo.value && !info.value?.contains(event.target)) dismissInfo()
+}
+
+function onKeyDown(event) {
+  if (event.key === 'Escape' && showInfo.value) dismissInfo()
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onPointerDown)
+  document.addEventListener('keydown', onKeyDown)
+})
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onPointerDown)
+  document.removeEventListener('keydown', onKeyDown)
+})
+
 const winnerMessage = computed(() => {
-  if (!isClub.value || !game.value.completed) return ''
+  if (!isClub.value || !game.value.completed || !hasResults.value) return ''
   const leaders = standings.value.filter((club) => club.rank === 1)
-  if (leaders.length === 1) return '🏆 Pemenang: ' + leaders[0].name
-  return 'Seri di posisi pertama: ' + leaders.map((club) => club.name).join(', ')
+  if (leaders.length === 1) return 'Winner: ' + leaders[0].name
+  return 'Tied for first: ' + leaders.map((club) => club.name).join(', ')
 })
 </script>
 
 <style scoped>
-.standings-table-wrap {
+.standings-heading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.standings-heading h2 { font-size: 20px; }
+
+.info-button { color: var(--primary); }
+
+.info-panel {
+  position: absolute;
+  z-index: 2;
+  top: 100%;
+  right: 0;
+  width: min(100%, 320px);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
   background: var(--card-bg);
-  border-radius: 12px;
-  overflow-x: auto;
+  box-shadow: var(--shadow-popover);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.info-panel dl { display: grid; gap: 6px; }
+.info-panel dt { font-weight: 700; color: var(--text-primary); }
+.info-panel p { margin-top: 8px; }
+
+.standings-surface {
+  overflow: auto;
 }
 
 .winner {
-  padding: 10px;
+  padding: 12px;
+  background: var(--primary-bg);
+  color: var(--primary);
   font-weight: 700;
 }
 
@@ -80,25 +170,26 @@ const winnerMessage = computed(() => {
   font-size: 13px;
 }
 
-.standings-table th {
+.standings-table thead th {
   background: var(--tag-bg);
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  padding: 8px 6px;
+  padding: 10px 6px;
   text-align: left;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 
-.standings-table td {
-  padding: 7px 6px;
+.standings-table td, .standings-table tbody th {
+  padding: 10px 6px;
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
 }
 
-.standings-table tbody tr:last-child td {
+.standings-table tbody tr:last-child > * {
   border-bottom: none;
 }
 
@@ -110,11 +201,13 @@ const winnerMessage = computed(() => {
 }
 
 .col-name {
+  text-align: left;
+  overflow-wrap: anywhere;
   font-weight: 600;
 }
 
 .col-num {
-  width: 44px;
+  width: 42px;
   text-align: center !important;
   font-variant-numeric: tabular-nums;
 }
@@ -134,23 +227,18 @@ const winnerMessage = computed(() => {
   color: var(--primary);
 }
 
-.standings-note {
-  margin: 0;
-  padding: 8px 10px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-
 /* Podium highlight */
-.row-gold td { background: #fff8e1; }
-.row-silver td { background: #e8f4fd; }
-.row-bronze td { background: #fff3e0; }
-
-.row-gold .col-rank { color: #f59e0b; }
-.row-silver .col-rank { color: #6cb9ef; }
-.row-bronze .col-rank { color: #d97706; }
+.row-gold > * { background: var(--primary-bg); }
+.row-gold .col-rank { color: var(--primary); }
+.row-silver .col-rank { color: var(--text-primary); }
+.row-bronze .col-rank { color: var(--yellow); }
 
 /* Players who left the session (inactive) — old scores still count */
-.row-inactive td { opacity: 0.55; }
+.row-inactive .col-name { color: var(--text-secondary); }
+.empty-standings { padding: 12px; color: var(--text-secondary); }
+
+@media (max-width: 390px) {
+  .standings-table thead th, .standings-table td, .standings-table tbody th { padding-inline: 4px; }
+  .col-num { width: 37px; }
+}
 </style>

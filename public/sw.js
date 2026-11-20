@@ -1,13 +1,15 @@
 // BadminScore service worker — cache shell + stale-while-revalidate.
 // Scope: /badmin-score/ (GitHub Pages). Di dev tidak dipakai (lihat main.js).
-const CACHE = 'badmin-score-v1'
+const CACHE = 'badmin-score-v2'
 const CORE = [
   './',
   './index.html',
-  './manifest.webmanifest',
-  './favicon.svg',
-  './icon-192.png',
-  './icon-512.png',
+  './manifest.webmanifest?v=2',
+  './favicon.svg?v=2',
+  './icon-192.png?v=2',
+  './icon-512.png?v=2',
+  './icon-maskable-512.png?v=2',
+  './apple-touch-icon.png?v=2',
 ]
 
 self.addEventListener('install', (event) => {
@@ -23,7 +25,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys
+        .filter((key) => key.startsWith('badmin-score-') && key !== CACHE)
+        .map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   )
 })
