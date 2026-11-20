@@ -19,16 +19,17 @@ const isConfigured = !!(
   firebaseConfig.apiKey !== 'your_api_key_here'
 )
 
+let app = null
 let db = null
 
 if (isConfigured) {
   try {
-    const app = initializeApp(firebaseConfig)
+    app = initializeApp(firebaseConfig)
     db = getFirestore(app)
   } catch (err) {
     console.warn('Firebase initialization failed:', err)
   }
 }
 
-export { db }
+export { app, db }
 export const firebaseReady = !!db

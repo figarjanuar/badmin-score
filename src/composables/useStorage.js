@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { firebaseReady } from '../config/firebase.js'
-import { pushGame, publishGame, pullGame, syncGame, updateGameFirestore, deleteGameFirestore } from './useFirestore.js'
+import { pushGame, publishGame, pullGame, syncGame, updateGameFirestore, deleteGameFirestore, listGamesPage } from './useFirestore.js'
 
 const STORAGE_KEY = 'badminscore'
 
@@ -165,6 +165,7 @@ export function useStorage() {
 
   return {
     getGames,
+    listGamesPage,
     getGame,
     getSyncStatus,
     addGame,

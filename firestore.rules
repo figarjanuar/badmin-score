@@ -1,0 +1,10 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /games/{gameId} {
+      allow get, write: if true;
+      allow list: if request.auth != null && request.auth.token.badminAdmin == true;
+    }
+  }
+}

@@ -43,6 +43,8 @@ const brandIcon = import.meta.env.BASE_URL + 'favicon.svg?v=2'
 const headerTitle = computed(() => {
   switch (route.name) {
     case 'config': return 'Setup'
+    case 'admin-login':
+    case 'admin': return 'Admin'
     case 'rotation': return getGame(route.params.gameId)?.mode === 'club' ? 'Club vs Club' : 'Rotation'
     case 'scoreboard': return 'Session results'
     default: return ''

@@ -12,6 +12,8 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/config', name: 'config', component: ConfigView },
+    { path: '/admin/login', name: 'admin-login', component: () => import('./views/AdminLoginView.vue') },
+    { path: '/admin', name: 'admin', component: () => import('./views/AdminDashboardView.vue') },
     { path: '/match/:gameId', name: 'rotation', component: RotationView, props: true },
     { path: '/match/:gameId/scoreboard', name: 'scoreboard', component: ScoreboardView, props: true },
     { path: '/match/:gameId/unavailable', name: 'match-unavailable', component: MatchUnavailableView },
@@ -25,6 +27,14 @@ const router = createRouter({
 const { loadRemoteGame } = useStorage()
 
 router.beforeEach(async (to) => {
+  if (to.name === 'admin' || to.name === 'admin-login') {
+    const { hasAdminSession } = await import('./composables/adminAuth.js')
+    const isAdmin = await hasAdminSession().catch(() => false)
+    if (to.name === 'admin' && !isAdmin) return { name: 'admin-login', replace: true }
+    if (to.name === 'admin-login' && isAdmin) return { name: 'admin', replace: true }
+    return
+  }
+
   if (!to.params.gameId || to.name === 'match-unavailable') return
 
   const unavailable = (reason) => ({

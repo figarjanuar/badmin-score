@@ -1,7 +1,24 @@
-import { doc, setDoc, updateDoc, getDocFromServer, onSnapshot, deleteDoc, runTransaction } from 'firebase/firestore'
+import {
+  collection, deleteDoc, doc, getDocFromServer, getDocsFromServer,
+  limit, onSnapshot, orderBy, query, runTransaction, setDoc, startAfter, updateDoc,
+} from 'firebase/firestore'
 import { db, firebaseReady } from '../config/firebase.js'
 
 const COLLECTION = 'games'
+const ADMIN_PAGE_SIZE = 10
+
+export async function listGamesPage(after) {
+  if (!firebaseReady) return { games: [], nextCursor: null }
+
+  const constraints = [orderBy('createdAt', 'desc'), limit(ADMIN_PAGE_SIZE + 1)]
+  if (after) constraints.push(startAfter(after))
+  const snapshot = await getDocsFromServer(query(collection(db, COLLECTION), ...constraints))
+  const page = snapshot.docs.slice(0, ADMIN_PAGE_SIZE)
+  return {
+    games: page.map((item) => ({ ...item.data(), id: item.id })),
+    nextCursor: snapshot.size > ADMIN_PAGE_SIZE ? page.at(-1) : null,
+  }
+}
 
 export async function pushGame(game) {
   if (!firebaseReady) return
@@ -12,7 +29,7 @@ export async function pushGame(game) {
 export async function pullGame(gameId) {
   if (!firebaseReady) return null
   const snap = await getDocFromServer(doc(db, COLLECTION, gameId))
-  return snap.exists() ? snap.data() : null
+  return snap.exists() ? { ...snap.data(), id: snap.id } : null
 }
 
 export async function publishGame(game) {
@@ -29,7 +46,7 @@ export function syncGame(gameId, onUpdate) {
   if (!firebaseReady) return () => {}
   return onSnapshot(doc(db, COLLECTION, gameId), { includeMetadataChanges: true }, (snap) => {
     if (snap.exists() && !snap.metadata.hasPendingWrites && !snap.metadata.fromCache) {
-      onUpdate(snap.data())
+      onUpdate({ ...snap.data(), id: snap.id })
     }
   }, (err) => {
     console.warn('Firestore syncGame error:', err)
