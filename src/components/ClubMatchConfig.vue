@@ -49,77 +49,146 @@
       <button type="button" class="action-button full-width" @click="addClub">+ Add club</button>
     </section>
 
-    <section v-show="step === 2" class="setup-section schedule-panel">
-      <label class="setup-row court-count">
-        <strong>Number of courts</strong>
-        <select class="input" v-model.number="numCourts">
-          <option v-for="count in 6" :key="count" :value="count">{{ count }}</option>
-        </select>
-      </label>
+    <section v-if="step === 2" class="setup-section schedule-panel">
+      <div class="surface schedule-settings">
+        <h2 class="section-title">Schedule settings</h2>
+        <div class="setting-row">
+          <strong>Number of courts</strong>
+          <NumberStepper v-model="numCourts" :min="1" :max="6" label="Number of courts"
+            decrease-label="Decrease court count" increase-label="Increase court count" />
+        </div>
+        <div class="setting-row">
+          <div class="setting-copy">
+            <strong>Number of matches</strong>
+            <p class="muted">Changes by 2 to keep the total odd.</p>
+          </div>
+          <NumberStepper :model-value="matchCount" :min="1" :step="2" label="Number of matches"
+            decrease-label="Remove 2 matches" increase-label="Add 2 matches" @update:model-value="setMatchCount" />
+        </div>
 
-      <fieldset class="schedule-options">
-        <legend>How to choose opponents</legend>
-        <label><input v-model="method" type="radio" name="schedule-method" value="random" /> Random</label>
-        <label><input v-model="method" type="radio" name="schedule-method" value="manual" /> Manual</label>
-      </fieldset>
-
-      <div class="setup-row">
-        <p aria-live="polite"><strong>{{ matches.length }} {{ matches.length === 1 ? 'match' : 'matches' }}</strong> · The total must be odd</p>
-        <button type="button" class="action-button" @click="addMatch">+ Add match</button>
+        <fieldset class="schedule-method">
+          <legend>Pairing method</legend>
+          <div class="method-options">
+            <label v-for="option in methodOptions" :key="option.value" class="method-card">
+              <input v-model="method" type="radio" name="schedule-method" :value="option.value" />
+              <strong>{{ option.label }}</strong>
+              <span>{{ option.description }}</span>
+            </label>
+          </div>
+        </fieldset>
       </div>
-      <button v-if="method === 'random'" type="button" class="action-button full-width" :disabled="!rosterReady" @click="randomize">
-        Randomize pairings and order
-      </button>
 
-      <fieldset v-for="(match, index) in matches" :key="match.id" class="setup-card surface">
-        <legend>Match {{ index + 1 }}</legend>
-        <p v-if="numCourts > 1" class="match-location">{{ matchLocations.get(match.id) }}</p>
-        <div class="match-pairs">
-          <select class="input" v-model="match.home" :aria-label="'First pair in match ' + (index + 1)">
-            <option :value="null">Select the first pair</option>
-            <optgroup v-for="club in clubs" :key="club.id" :label="clubLabel(club)">
-              <option v-for="(team, teamIndex) in club.teams" :key="team.id" :value="team.id" :disabled="club.id === teams.get(match.away)?.club.id">
-                {{ teamLabel(team, teamIndex) }}
-              </option>
-            </optgroup>
-          </select>
-          <select class="input" v-model="match.away" :aria-label="'Second pair in match ' + (index + 1)">
-            <option :value="null">Select the second pair</option>
-            <optgroup v-for="club in clubs" :key="club.id" :label="clubLabel(club)">
-              <option v-for="(team, teamIndex) in club.teams" :key="team.id" :value="team.id" :disabled="club.id === teams.get(match.home)?.club.id">
-                {{ teamLabel(team, teamIndex) }}
-              </option>
-            </optgroup>
-          </select>
+      <section v-if="method === 'random'" class="schedule-matches">
+        <div class="matches-heading">
+          <div>
+            <h2 class="section-title">Schedule preview</h2>
+            <p class="muted" role="status">{{ matchCount }} {{ matchCount === 1 ? 'match' : 'matches' }} · {{ plannedRounds.length }} {{ plannedRounds.length === 1 ? 'round' : 'rounds' }}</p>
+          </div>
+          <button type="button" class="action-button" @click="randomize">Shuffle again</button>
         </div>
-        <div class="match-actions">
-          <button type="button" class="action-button" :disabled="index === 0" @click="moveMatch(index, -1)" :aria-label="'Move match ' + (index + 1) + ' up'">↑</button>
-          <button type="button" class="action-button" :disabled="index === matches.length - 1" @click="moveMatch(index, 1)" :aria-label="'Move match ' + (index + 1) + ' down'">↓</button>
-          <button type="button" class="action-button" :disabled="matches.length === 1" @click="matches.splice(index, 1)" :aria-label="'Remove match ' + (index + 1)">Remove</button>
-        </div>
-      </fieldset>
-    </section>
+        <ol class="preview-list surface">
+          <li v-for="(match, index) in randomMatches" :key="match.id">
+            <div class="match-meta">
+              <strong>Match {{ index + 1 }}</strong>
+              <span v-if="numCourts > 1" class="muted">{{ matchLocations.get(match.id) }}</span>
+            </div>
+            <div class="preview-pairs">
+              <span>{{ pairLabel(match.home) }}</span>
+              <span class="muted">vs</span>
+              <span>{{ pairLabel(match.away) }}</span>
+            </div>
+          </li>
+        </ol>
+      </section>
 
-    <template v-if="step === 2">
+      <section v-else class="schedule-matches">
+        <div class="matches-heading">
+          <div>
+            <h2 class="section-title">Set up matches</h2>
+            <p class="muted" role="status">{{ readyMatchCount }} of {{ matchCount }} matches ready</p>
+          </div>
+          <button v-if="matchCount > 1" type="button" class="action-button" :aria-pressed="reordering"
+            @click="reordering = !reordering">{{ reordering ? 'Done reordering' : 'Reorder matches' }}</button>
+        </div>
+        <p v-if="reordering" class="muted reorder-hint">Move matches up or down. Courts and rounds follow this order.</p>
+        <ol class="manual-list">
+          <li v-for="(match, index) in activeManualMatches" :key="match.id" class="surface manual-match">
+            <div class="manual-match-header">
+              <div v-if="reordering" class="manual-summary">
+                <strong>Match {{ index + 1 }}</strong>
+                <span class="muted">{{ manualMatchLabel(match) }}</span>
+              </div>
+              <button v-else type="button" class="match-toggle" :aria-expanded="expandedMatchId === match.id"
+                :aria-controls="'match-fields-' + match.id" @click="toggleMatch(match.id)">
+                <span class="manual-summary">
+                  <strong>Match {{ index + 1 }}</strong>
+                  <span class="muted">{{ manualMatchLabel(match) }}</span>
+                  <span v-if="readyMatchCount === matchCount && numCourts > 1" class="match-slot">
+                    {{ matchLocations.get(match.id) }}
+                  </span>
+                </span>
+                <AppIcon :name="expandedMatchId === match.id ? 'chevron-up' : 'chevron-down'" />
+              </button>
+              <div v-if="reordering" class="match-actions">
+                <button type="button" class="action-button icon" :disabled="index === 0" @click="moveMatch(index, -1)"
+                  :aria-label="'Move match ' + (index + 1) + ' up'"><AppIcon name="arrow-up" /></button>
+                <button type="button" class="action-button icon" :disabled="index === matchCount - 1" @click="moveMatch(index, 1)"
+                  :aria-label="'Move match ' + (index + 1) + ' down'"><AppIcon name="arrow-down" /></button>
+              </div>
+            </div>
+            <div v-show="expandedMatchId === match.id && !reordering" :id="'match-fields-' + match.id" class="match-pairs">
+              <label v-for="side in pairFields" :key="side.key" class="match-field">
+                {{ side.label }}
+                <select class="input" v-model="match[side.key]" :aria-label="side.label + ' in match ' + (index + 1)">
+                  <option :value="null">Select a pair</option>
+                  <optgroup v-for="club in clubs" :key="club.id" :label="clubLabel(club)">
+                    <option v-for="(team, teamIndex) in club.teams" :key="team.id" :value="team.id"
+                      :disabled="club.id === teams.get(match[side.other])?.club.id">
+                      {{ teamLabel(team, teamIndex) }}
+                    </option>
+                  </optgroup>
+                </select>
+              </label>
+            </div>
+          </li>
+        </ol>
+      </section>
+
       <p v-if="validationMessage" class="setup-error" aria-live="polite">{{ validationMessage }}</p>
-      <button type="submit" class="action-button primary create-button" :disabled="!!validationMessage">Create session</button>
-    </template>
+      <div class="schedule-footer">
+        <button type="button" class="action-button" aria-label="Back to clubs and pairs" @click="$emit('back')">Back</button>
+        <button type="submit" class="action-button primary" :disabled="!!validationMessage">Create session</button>
+      </div>
+    </section>
   </form>
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
+import NumberStepper from './NumberStepper.vue'
 import { createClubGame, groupClubMatches, randomClubMatches } from '../composables/clubMatches.js'
 
-const emit = defineEmits(['create'])
+const emit = defineEmits(['back', 'create'])
 const props = defineProps({
   step: { type: Number, required: true },
 })
 const clubs = ref([])
 const expandedClubId = ref(null)
 const showRosterErrors = ref(false)
-const matches = ref([])
+const matchCount = ref(3)
+const manualMatches = ref([])
+const randomMatches = ref([])
+const expandedMatchId = ref(null)
+const reordering = ref(false)
+const methodOptions = [
+  { value: 'random', label: 'Random', description: 'Automatically schedule pairs from different clubs.' },
+  { value: 'manual', label: 'Manual', description: 'Choose each pairing and set the match order.' },
+]
+const pairFields = [
+  { key: 'home', other: 'away', label: 'First pair' },
+  { key: 'away', other: 'home', label: 'Second pair' },
+]
 const method = ref('random')
 const numCourts = ref(1)
 let nextId = 0
@@ -137,22 +206,32 @@ function addClub() {
   expandedClubId.value = club.id
 }
 
-function addMatch() {
-  matches.value.push({ id: ++nextId, home: null, away: null })
+function setMatchCount(count) {
+  matchCount.value = count
+  // Keep the manual draft so reducing the count can be undone by increasing it again.
+  while (manualMatches.value.length < count) {
+    manualMatches.value.push({ id: ++nextId, home: null, away: null })
+  }
+  if (expandedMatchId.value !== null && !manualMatches.value.slice(0, count).some((match) => match.id === expandedMatchId.value)) {
+    expandedMatchId.value = manualMatches.value[0].id
+  }
+  if (count === 1) reordering.value = false
 }
 
 addClub()
 addClub()
 expandedClubId.value = clubs.value[0].id
-addMatch()
-addMatch()
-addMatch()
+setMatchCount(matchCount.value)
+expandedMatchId.value = manualMatches.value[0].id
 
 const teams = computed(() => {
   const entries = clubs.value.flatMap((club) => club.teams.map((team) => [team.id, { club, team }]))
   return new Map(entries)
 })
 
+const activeManualMatches = computed(() => manualMatches.value.slice(0, matchCount.value))
+const matches = computed(() => method.value === 'random' ? randomMatches.value : activeManualMatches.value)
+const readyMatchCount = computed(() => activeManualMatches.value.filter(isMatchReady).length)
 const plannedRounds = computed(() => groupClubMatches(matches.value, numCourts.value))
 const matchLocations = computed(() => new Map(plannedRounds.value.flatMap((round, roundIndex) =>
   round.map((match, courtIndex) => [match.id, `Round ${roundIndex + 1} · Court ${courtIndex + 1}`])
@@ -182,15 +261,23 @@ function validateRoster() {
 defineExpose({ validateRoster })
 
 const validationMessage = computed(() => {
-  if (matches.value.length % 2 === 0) return 'Add or remove a match so the total is odd.'
   if (!rosterReady.value) return 'Enter each club name and both players in every pair.'
-  if (matches.value.some(({ home, away }) => {
-    const first = teams.value.get(home)
-    const second = teams.value.get(away)
-    return !first || !second || first.club.id === second.club.id
-  })) return 'Choose two pairs from different clubs for each match.'
+  if (method.value === 'manual' && readyMatchCount.value !== matchCount.value) {
+    return 'Choose two pairs from different clubs for each match.'
+  }
+  if (matches.value.length !== matchCount.value) return 'The schedule is not ready yet.'
   return ''
 })
+
+watch([rosterReady, teams, numCourts, matchCount], () => {
+  if (rosterReady.value) randomize()
+}, { immediate: true })
+
+function isMatchReady({ home, away }) {
+  const first = teams.value.get(home)
+  const second = teams.value.get(away)
+  return first && second && first.club.id !== second.club.id
+}
 
 function clubLabel(club) {
   return club.name.trim() || 'Club ' + (clubs.value.indexOf(club) + 1)
@@ -202,8 +289,23 @@ function teamLabel(team, index) {
   return [clubLabel(club), 'Pair ' + (index + 1), names.join(' & ')].filter(Boolean).join(' · ')
 }
 
+function pairLabel(id) {
+  const entry = teams.value.get(id)
+  if (!entry) return ''
+  return `${clubLabel(entry.club)} · ${entry.team.players.map((player) => player.name.trim()).join(' & ')}`
+}
+
+function manualMatchLabel(match) {
+  if (!isMatchReady(match)) return 'Choose pairs'
+  return [pairLabel(match.home), pairLabel(match.away)].join(' vs ')
+}
+
+function toggleMatch(id) {
+  expandedMatchId.value = expandedMatchId.value === id ? null : id
+}
+
 function clearRemovedTeams() {
-  for (const match of matches.value) {
+  for (const match of manualMatches.value) {
     if (!teams.value.has(match.home)) match.home = null
     if (!teams.value.has(match.away)) match.away = null
   }
@@ -223,13 +325,13 @@ function removeTeam(club, index) {
 }
 
 function moveMatch(index, delta) {
-  const [match] = matches.value.splice(index, 1)
-  matches.value.splice(index + delta, 0, match)
+  const [match] = manualMatches.value.splice(index, 1)
+  manualMatches.value.splice(index + delta, 0, match)
 }
 
 function randomize() {
-  const schedule = randomClubMatches(clubs.value, matches.value.length, numCourts.value)
-  matches.value.forEach((match, index) => Object.assign(match, schedule[index]))
+  randomMatches.value = randomClubMatches(clubs.value, matchCount.value, numCourts.value)
+    .map((match, index) => ({ ...match, id: index + 1 }))
 }
 
 function createMatch() {
@@ -280,12 +382,6 @@ function createMatch() {
   gap: 12px;
 }
 
-legend {
-  padding-inline: 4px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .setup-row,
 .pair-fields {
   display: flex;
@@ -295,12 +391,6 @@ legend {
 
 .setup-row { justify-content: space-between; }
 
-.court-count select {
-  width: auto;
-  min-width: 64px;
-}
-
-.setup-row > input,
 .pair-fields > label {
   flex: 1;
   min-width: 0;
@@ -324,35 +414,88 @@ legend {
   border-top: 1px solid var(--border);
 }
 
-.schedule-options {
-  display: flex;
-  gap: 16px;
-  border: 0;
-}
+.schedule-panel { gap: 20px; }
 
-.schedule-options legend { margin-bottom: 4px; padding: 0; }
-.schedule-options input { accent-color: var(--primary); }
-
-.match-pairs {
+.schedule-settings {
   display: grid;
-  gap: 8px;
-  min-width: 0;
+  gap: 12px;
+  padding: clamp(14px, 4vw, 24px);
 }
 
-.match-location {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.match-actions {
+.setting-row, .matches-heading, .match-meta {
   display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
 }
+
+.setting-copy { min-width: 0; }
+.setting-row > .stepper { flex-shrink: 0; }
+.setting-row + .setting-row { padding-top: 12px; border-top: 1px solid var(--border); }
+.setting-row p, .matches-heading p { margin-top: 2px; font-size: 14px; }
+.schedule-method { min-width: 0; margin-top: 4px; border: 0; }
+.schedule-method legend { margin-bottom: 8px; font-weight: 700; }
+
+.method-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.method-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: var(--size-control);
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+}
+.method-card span { color: var(--text-secondary); font-size: 13px; }
+.method-card:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); }
+.method-card:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+.method-card input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+
+.schedule-matches, .manual-list { display: grid; gap: 10px; }
+.matches-heading { flex-wrap: wrap; }
+.preview-list, .manual-list { min-width: 0; list-style: none; }
+.preview-list li { display: grid; gap: 4px; padding: 10px 14px; }
+.preview-list li + li { border-top: 1px solid var(--border); }
+.match-meta { flex-wrap: wrap; font-size: 13px; }
+.preview-pairs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.manual-match-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.match-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--size-control);
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.manual-summary { display: grid; gap: 2px; min-width: 0; }
+.manual-summary .muted { font-size: 13px; overflow-wrap: anywhere; }
+.match-slot { color: var(--primary); font-size: 13px; }
+.manual-match-header > .manual-summary { padding: 10px 0 10px 14px; }
+.match-actions { display: flex; gap: 8px; padding: 6px; }
+.reorder-hint { font-size: 14px; }
+.match-pairs { display: grid; gap: 12px; padding: 12px 14px 14px; border-top: 1px solid var(--border); }
+.match-field { display: grid; gap: 4px; font-size: 14px; }
+.schedule-footer { display: flex; gap: 8px; justify-content: flex-end; }
 
 .full-width { width: 100%; }
 .remove-field { color: var(--danger); }
-.create-button { width: 100%; }
 
 .setup-error {
   color: var(--danger);

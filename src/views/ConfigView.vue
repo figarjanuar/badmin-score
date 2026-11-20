@@ -40,17 +40,14 @@
       </div>
     </section>
 
-    <ClubMatchConfig ref="clubConfig" v-show="gameMode === 'club' && step > 0" :step="step" @create="saveGame" />
+    <ClubMatchConfig ref="clubConfig" v-show="gameMode === 'club' && step > 0" :step="step" @back="showStep(1)" @create="saveGame" />
 
     <section v-show="gameMode === 'rotation' && step === 1" class="config-panel surface">
       <!-- Court count -->
       <div class="field">
-        <p id="court-count-label" class="field-label">Number of courts</p>
-        <div class="stepper" role="group" aria-labelledby="court-count-label">
-          <button type="button" class="action-button icon" aria-label="Decrease court count" :disabled="numCourts === 1" @click="changeCourts(-1)">−</button>
-          <output class="stepper-value">{{ numCourts }}</output>
-          <button type="button" class="action-button icon" aria-label="Increase court count" :disabled="numCourts === 6" @click="changeCourts(1)">+</button>
-        </div>
+        <p class="field-label">Number of courts</p>
+        <NumberStepper :model-value="numCourts" :min="1" :max="6" label="Number of courts"
+          decrease-label="Decrease court count" increase-label="Increase court count" @update:model-value="setCourts" />
       </div>
 
       <!-- Rotation mode -->
@@ -164,7 +161,7 @@
       <p v-if="!readyToGenerate" class="error-hint">Enter at least {{ effectiveMinPlayers }} player names to create the schedule.</p>
     </section>
 
-    <div class="step-actions">
+    <div v-if="gameMode !== 'club' || step < 2" class="step-actions">
       <button v-if="step > 0" type="button" class="action-button" @click="showStep(step - 1)">Back</button>
       <button v-if="step < steps.length - 1" type="button" class="action-button primary step-next" @click="showStep(step + 1)">Next</button>
     </div>
@@ -177,6 +174,7 @@ import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { generateSession, estimateRounds, estimateRoundsCompletePartner } from '../composables/useRotation.js'
 import AppIcon from '../components/AppIcon.vue'
+import NumberStepper from '../components/NumberStepper.vue'
 import PageHeading from '../components/PageHeading.vue'
 import ClubMatchConfig from '../components/ClubMatchConfig.vue'
 
@@ -238,12 +236,9 @@ async function showStep(index) {
   window.scrollTo({ top: 0 })
 }
 
-function changeCourts(delta) {
-  const next = numCourts.value + delta
-  if (next >= 1 && next <= 6) {
-    numCourts.value = next
-    while (players.value.length < next * 4) addPlayer()
-  }
+function setCourts(count) {
+  numCourts.value = count
+  while (players.value.length < count * 4) addPlayer()
 }
 
 function addPlayer() {
@@ -358,8 +353,6 @@ function saveGame(game) {
 .field-label { display: block; margin-bottom: 8px; color: var(--text-primary); font-size: 15px; font-weight: 700; }
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .field-row .field-label { margin: 0; }
-.stepper { display: flex; gap: 12px; align-items: center; }
-.stepper-value { min-width: 32px; text-align: center; font: 700 34px / 1 var(--font-display); }
 .mode-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .mode-btn.active { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
 .mode-desc, .optional, .player-progress { color: var(--text-secondary); }
