@@ -32,6 +32,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 import { useAppBack } from './composables/useAppBack.js'
 import { useStorage } from './composables/useStorage.js'
+import { getSessionModeLabel } from './composables/sessionModes.js'
 
 const { getGame, subscribeToGame } = useStorage()
 const route = useRoute()
@@ -45,7 +46,7 @@ const headerTitle = computed(() => {
     case 'config': return 'Setup'
     case 'admin-login':
     case 'admin': return 'Admin'
-    case 'rotation': return getGame(route.params.gameId)?.mode === 'club' ? 'Club vs Club' : 'Rotation'
+    case 'rotation': return getSessionModeLabel(getGame(route.params.gameId)?.mode)
     case 'scoreboard': return 'Session results'
     default: return ''
   }

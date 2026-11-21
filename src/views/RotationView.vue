@@ -1,6 +1,7 @@
 <template>
   <div class="page rotation">
-    <PageHeading :title="game?.name || 'Rotation'" :label="(isClub ? 'Club vs Club' : 'Player rotation') + ' · ' + category.label">
+    <PageHeading :title="game?.name || 'Rotation'" :label="getSessionModeLabel(game?.mode) + ' · ' + category.label"
+      :description="isMexicano ? 'First to ' + game.pointsTarget + ' points per court' : ''">
       <template #actions>
         <button type="button" class="action-button" @click="openShare">
           <AppIcon name="share" /> Share
@@ -31,7 +32,8 @@
     <!-- Score pane: scoreboard for the current round -->
     <div v-show="activeTab === 'skor'" class="tab-pane">
       <div class="round-summary">
-        <h2>{{ roundLabel }} {{ currentRound + 1 }} of {{ totalRounds }}</h2>
+        <h2 v-if="isKnockout && round">{{ bracket[round.stage - 1]?.label }} · Round {{ round.num }}</h2>
+        <h2 v-else>{{ roundLabel }} {{ currentRound + 1 }}<template v-if="!isMexicano"> of {{ totalRounds }}</template></h2>
         <span class="round-progress"><AppIcon name="check" /> {{ confirmedInRound }} of {{ round?.courts.length || 0 }} confirmed</span>
       </div>
       <!-- Round navigation: horizontal scroll -->
@@ -53,7 +55,7 @@
         </button>
       </div>
 
-      <p v-if="!isClub && round" class="resting">
+      <p v-if="canEditRoster && round" class="resting">
         <strong><AppIcon name="players" /> Resting this round</strong>
         <span>{{ restingNames.length ? restingNames.join(', ') : 'All active players are playing' }}</span>
       </p>
@@ -110,14 +112,15 @@
             </section>
           </div>
           <footer v-if="!game.completed" class="court-actions">
-            <button v-if="court.confirmed" type="button" class="action-button court-result-action" @click="reopenResult(court.court)">
+            <p v-if="isPastKnockoutStage" class="score-hint">Result locked after the next stage was drawn.</p>
+            <button v-else-if="court.confirmed" type="button" class="action-button court-result-action" @click="reopenResult(court.court)">
               Correct result
             </button>
             <template v-else>
               <p v-if="getCourtStatus(court, game) === 'live' && !canConfirmResult(court)" class="score-hint">
                 {{ resultHint(court) }}
               </p>
-              <button type="button" class="action-button" @click="addSet(court.court)">Add set</button>
+              <button v-if="!isMexicano" type="button" class="action-button" @click="addSet(court.court)">Add set</button>
               <button type="button" class="action-button primary court-result-action" :disabled="!canConfirmResult(court)" @click="confirmResult(court.court)">
                 Confirm result
               </button>
@@ -126,9 +129,22 @@
         </div>
       </div>
 
-      <div class="rotation-actions">
+      <div v-if="!game?.completed && currentRound === totalRounds - 1" class="rotation-actions">
+        <template v-if="nextKnockoutStage">
+          <button type="button" class="action-button primary" :disabled="!!unfinishedMatches.length" @click="advanceKnockout">
+            Start {{ nextKnockoutStage.label.toLowerCase() }} <AppIcon name="arrow" />
+          </button>
+          <p v-if="unfinishedMatches.length" class="next-round-hint">Confirm every result in this stage to continue.</p>
+        </template>
+        <template v-else-if="isMexicano">
+          <button type="button" class="action-button primary" :disabled="!!unfinishedMatches.length" @click="confirmAddRound">
+            Draw next round <AppIcon name="arrow" />
+          </button>
+          <p v-if="unfinishedMatches.length" class="next-round-hint">Confirm every match result to draw the next round.</p>
+        </template>
         <button
-          v-if="!isClub && !game?.completed && currentRound === totalRounds - 1"
+          v-else-if="canEditRoster"
+          type="button"
           class="action-button"
           @click="requestAddRound"
         >
@@ -139,7 +155,9 @@
 
     <!-- Players pane: edit players mid-game -->
     <div v-show="activeTab === 'pemain'" class="tab-pane roster-pane surface">
-      <h2 class="section-title">Active players ({{ activePlayers.length }})</h2>
+      <h2 class="section-title">
+        {{ isTournament ? 'Entries (' + game.entries.length + ')' : 'Active players (' + activePlayers.length + ')' }}
+      </h2>
       <div v-for="group in playerGroups" :key="group.id" class="player-list">
         <h3 v-if="group.label" class="player-group-label">{{ group.label }}</h3>
         <div v-for="(p, idx) in group.players" :key="p.id" class="player-row">
@@ -155,7 +173,7 @@
           />
           <span v-if="isMixed" class="muted">{{ mixedGroups.find((group) => group.id === p.mixedGroup)?.label }}</span>
           <button
-            v-if="!isClub"
+            v-if="canEditRoster"
             class="action-button ghost icon player-remove"
             :disabled="game?.completed || !canRemovePlayer(p)"
             @click="requestDelete(p)"
@@ -164,20 +182,20 @@
         </div>
       </div>
       <button
-        v-if="!isClub && !game?.completed"
+        v-if="canEditRoster && !game?.completed"
         class="action-button"
         @click="openAddPlayer"
       >
         Add player
       </button>
-      <p v-if="!isClub && isMixed" class="muted">
+      <p v-if="canEditRoster && isMixed" class="muted">
         Mixed doubles needs two men and two women per court.
       </p>
-      <p v-else-if="!isClub && activePlayers.length <= minPlayers" class="error-hint">
+      <p v-else-if="canEditRoster && activePlayers.length <= minPlayers" class="error-hint">
         At least {{ minPlayers }} players required for {{ game?.numCourts }} {{ game?.numCourts === 1 ? 'court' : 'courts' }}.
       </p>
 
-      <div v-if="!isClub && inactivePlayers.length" class="inactive-section">
+      <div v-if="canEditRoster && inactivePlayers.length" class="inactive-section">
         <h3 class="section-title">Inactive players ({{ inactivePlayers.length }})</h3>
         <div v-for="p in inactivePlayers" :key="p.id" class="player-row row-inactive">
           <span class="player-num">—</span>
@@ -195,8 +213,9 @@
     </div>
 
     <!-- Standings pane -->
-    <div v-show="activeTab === 'klasemen'" class="tab-pane standings-pane">
-      <StandingsTable :game-id="gameId" />
+    <div v-show="activeTab === 'klasemen'" class="tab-pane standings-pane" :class="{ 'bracket-layout': isKnockout }">
+      <KnockoutBracket v-if="isKnockout" :game="game" interactive @view-match="goToMatch" />
+      <StandingsTable v-else :game-id="gameId" />
 
       <MatchHistory :matches="confirmedMatches" :single-court-club="isSingleCourtClub" />
     </div>
@@ -215,20 +234,21 @@
         <p class="confirm-text">{{ unfinishedMatches.length }} {{ unfinishedMatches.length === 1 ? 'match needs' : 'matches need' }} confirmation.</p>
         <ul class="unfinished-list">
           <li v-for="match in unfinishedMatches" :key="match.key">
-            <button type="button" class="action-button" @click="goToUnfinishedMatch(match)">
+            <button type="button" class="action-button" @click="goToMatch(match)">
               {{ matchLocation(match) }}
             </button>
           </li>
         </ul>
-        <p class="confirm-text">{{ isClub
-          ? 'Confirm every result before ending this club session.'
+        <p class="confirm-text">{{ requiresAllResults
+          ? 'Confirm every result before ending the session.'
           : 'The final standings will include only confirmed results.' }}</p>
       </template>
+      <p v-else-if="knockoutInProgress" class="confirm-text">Finish the final before ending the tournament.</p>
       <p v-else class="confirm-text">All results are confirmed. You can reopen the session to correct a result.</p>
       <template #actions>
         <button type="button" class="action-button" @click="showFinishConfirm = false">Cancel</button>
-        <button type="button" class="action-button danger" :disabled="isClub && !!unfinishedMatches.length" @click="confirmFinish">
-          {{ unfinishedMatches.length && !isClub ? 'End with confirmed results' : 'End session' }}
+        <button type="button" class="action-button danger" :disabled="finishBlocked" @click="confirmFinish">
+          {{ unfinishedMatches.length && !requiresAllResults ? 'End with confirmed results' : 'End session' }}
         </button>
       </template>
     </AppDialog>
@@ -237,7 +257,7 @@
     <AppDialog v-if="deleteTarget" title="Remove player?" @close="deleteTarget = null">
       <p class="confirm-text">
         <b>{{ deleteTarget.name || 'P' + deleteTarget.id }}</b> will leave the rotation. Previous rounds and scores are saved.
-        <span v-if="regeneratedFrom < totalRounds">
+        <span v-if="regeneratedFrom !== null && regeneratedFrom < totalRounds">
           Rounds {{ regeneratedFrom + 1 }}–{{ totalRounds }} will be rescheduled.
         </span>
       </p>
@@ -288,10 +308,14 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { useStandings } from '../composables/useStandings.js'
-import { getCourtStatus, getFinalMatchResult, getMatchResult, getMatchSets, hasSetScore, matchStatusLabels } from '../composables/matchScores.js'
+import { getCourtStatus, getFinalMatchResult, getSessionMatchResult, getMatchSets, hasSetScore, matchStatusLabels } from '../composables/matchScores.js'
 import { getMatchCategory, hasCourtRoster, mixedGroups } from '../composables/matchCategories.js'
+import { drawMexicanoRound } from '../composables/mexicano.js'
+import { getSessionModeLabel, isTournamentMode } from '../composables/sessionModes.js'
+import { drawKnockoutStage, getKnockoutBracket } from '../composables/tournaments.js'
 import AppDialog from '../components/AppDialog.vue'
 import AppIcon from '../components/AppIcon.vue'
+import KnockoutBracket from '../components/KnockoutBracket.vue'
 import { generateId, generateNextRound, regenerateRemainingRounds, computeKeptCount } from '../composables/useRotation.js'
 import MatchHistory from '../components/MatchHistory.vue'
 import PageHeading from '../components/PageHeading.vue'
@@ -310,9 +334,19 @@ const game = computed(() => getGame(props.gameId))
 const category = computed(() => getMatchCategory(game.value?.category))
 const isMixed = computed(() => category.value.id === 'mixed')
 const isClub = computed(() => game.value?.mode === 'club')
+const isMexicano = computed(() => game.value?.mode === 'mexicano')
+const isKnockout = computed(() => game.value?.mode === 'knockout')
+const isTournament = computed(() => isTournamentMode(game.value?.mode))
+const canEditRoster = computed(() => !isTournament.value && !isClub.value)
+const bracket = computed(() => isKnockout.value ? getKnockoutBracket(game.value) : [])
+const scheduledStage = computed(() => game.value?.rounds.at(-1)?.stage)
+const nextKnockoutStage = computed(() => bracket.value[scheduledStage.value])
+const knockoutInProgress = computed(() => isKnockout.value && !bracket.value.at(-1)?.matches[0]?.winner)
 const isSingleCourtClub = computed(() => isClub.value && game.value.numCourts === 1)
 const { allMatches, confirmedMatches, clubByPlayer } = useStandings(game)
 const unfinishedMatches = computed(() => allMatches.value.filter((match) => !match.confirmed))
+const requiresAllResults = computed(() => isClub.value || isTournament.value)
+const finishBlocked = computed(() => knockoutInProgress.value || (requiresAllResults.value && !!unfinishedMatches.value.length))
 const roundLabel = computed(() => isSingleCourtClub.value ? 'Match' : 'Round')
 const roundKey = 'badminscore:round:' + props.gameId
 const lastRound = Number(sessionStorage.getItem(roundKey)) || 0
@@ -321,11 +355,11 @@ const showFinishConfirm = ref(false)
 const showAddRoundConfirm = ref(false)
 
 // Bottom tab bar state
-const tabs = [
-  { id: 'pemain', icon: 'players', label: 'Players' },
+const tabs = computed(() => [
+  { id: 'pemain', icon: 'players', label: isTournament.value ? 'Entries' : 'Players' },
   { id: 'skor', icon: 'score', label: 'Score' },
-  { id: 'klasemen', icon: 'ranking', label: 'Standings' },
-]
+  { id: 'klasemen', icon: 'ranking', label: isKnockout.value ? 'Bracket' : 'Standings' },
+])
 const activeTab = ref('skor')
 
 // Player editing state
@@ -346,6 +380,7 @@ const shareUrl = ref('')
 
 const totalRounds = computed(() => game.value?.rounds.length || 0)
 const round = computed(() => game.value?.rounds[currentRound.value] || null)
+const isPastKnockoutStage = computed(() => isKnockout.value && round.value?.stage < scheduledStage.value)
 const restingNames = computed(() => (round.value?.resting || []).map(playerName))
 const confirmedInRound = computed(() =>
   round.value?.courts.filter((court) => getFinalMatchResult(court, game.value)).length || 0
@@ -358,8 +393,17 @@ const scrollRightHint = ref(false)
 
 const activePlayers = computed(() => (game.value?.players || []).filter((p) => !p.inactive))
 const playerGroups = computed(() => {
-  if (!isClub.value) return [{ id: 'rotation', players: activePlayers.value }]
+  if (canEditRoster.value || (isTournament.value && category.value.sideSize === 1)) {
+    return [{ id: 'players', players: activePlayers.value }]
+  }
   const players = new Map(activePlayers.value.map((player) => [player.id, player]))
+  if (isTournament.value) {
+    return game.value.entries.map((entry, index) => ({
+      id: entry.id,
+      label: 'Pair ' + (index + 1),
+      players: entry.playerIds.map((id) => players.get(id)),
+    }))
+  }
   return game.value.clubs.flatMap((club) => club.teams.map((team, index) => ({
     id: team.id,
     label: club.name + ' · ' + (category.value.sideSize === 1 ? 'Player ' : 'Team ') + (index + 1),
@@ -369,7 +413,7 @@ const playerGroups = computed(() => {
 const inactivePlayers = computed(() => (game.value?.players || []).filter((p) => p.inactive))
 const minPlayers = computed(() => (game.value?.numCourts || 0) * category.value.sideSize * 2)
 const regeneratedFrom = computed(() => {
-  if (!deleteTarget.value || !game.value) return null
+  if (!deleteTarget.value || !game.value || isMexicano.value) return null
   return computeKeptCount(game.value.rounds, currentRound.value)
 })
 
@@ -383,7 +427,11 @@ function playerName(id) {
  * storage and Firestore always see consistent state.
  */
 function applyPlayerChange(newPlayers) {
-  if (game.value?.completed) return false
+  if (game.value?.completed || !canEditRoster.value) return false
+  if (isMexicano.value) {
+    updateGame(props.gameId, { players: newPlayers })
+    return true
+  }
   const result = regenerateRemainingRounds(game.value, newPlayers.filter((p) => !p.inactive), currentRound.value)
   if (result === null) {
     alert('Could not reschedule the rounds. Try again.')
@@ -488,6 +536,7 @@ watch(totalRounds, (count) => {
 
 function updateCourt(roundIndex, courtNum, update) {
   if (!game.value || game.value.completed) return
+  if (isKnockout.value && game.value.rounds[roundIndex]?.stage < scheduledStage.value) return
   const rounds = JSON.parse(JSON.stringify(game.value.rounds))
   const court = rounds[roundIndex]?.courts.find((item) => item.court === courtNum)
   if (!court || update(court) === false) return
@@ -563,13 +612,16 @@ function finishSession() {
 }
 
 function canConfirmResult(court) {
-  return !!getMatchResult(getMatchSets(court), !isClub.value)
+  return !!getSessionMatchResult(court, game.value)
 }
 
 function resultHint(court) {
   const incomplete = getMatchSets(court).some((set) => set.score1 == null || set.score2 == null)
-  return incomplete ? 'Enter both scores in every set, including zero as needed.'
-    : 'Check any tied scores or add a deciding set.'
+  if (isMexicano.value) {
+    if (incomplete) return 'Enter both scores, including zero as needed.'
+    return 'One pair must finish on ' + game.value.pointsTarget + ' points and the other below it.'
+  }
+  return incomplete ? 'Enter both scores in every set, including zero as needed.' : 'Check any tied scores or add a deciding set.'
 }
 
 function confirmResult(courtNum) {
@@ -591,7 +643,7 @@ function matchLocation(match) {
   return isSingleCourtClub.value ? 'Match ' + match.round : `Round ${match.round} · Court ${match.court}`
 }
 
-function goToUnfinishedMatch(match) {
+function goToMatch(match) {
   showFinishConfirm.value = false
   activeTab.value = 'skor'
   currentRound.value = game.value.rounds.findIndex((item) => item.num === match.round)
@@ -606,7 +658,7 @@ function selectTab(id) {
 }
 
 function confirmFinish() {
-  if (!game.value || (isClub.value && unfinishedMatches.value.length)) return
+  if (!game.value || finishBlocked.value) return
 
   const rounds = game.value.rounds.map((item) => ({
     ...item,
@@ -629,9 +681,9 @@ function requestAddRound() {
 
 function confirmAddRound() {
   showAddRoundConfirm.value = false
-  if (!game.value) return
+  if (!game.value || game.value.completed || !canEditRoster.value || currentRound.value !== totalRounds.value - 1) return
 
-  const newRound = generateNextRound(game.value)
+  const newRound = isMexicano.value ? drawMexicanoRound(game.value) : generateNextRound(game.value)
   if (!newRound) {
     alert('Could not create a new round. Try again.')
     return
@@ -642,6 +694,15 @@ function confirmAddRound() {
 
   // Navigate to the new round
   currentRound.value = rounds.length - 1
+}
+
+function advanceKnockout() {
+  if (!nextKnockoutStage.value || game.value.completed || unfinishedMatches.value.length) return
+  const added = drawKnockoutStage(game.value, bracket.value)
+  if (!added.length) return
+  const firstNewRound = game.value.rounds.length
+  updateGame(props.gameId, { rounds: [...game.value.rounds, ...added] })
+  currentRound.value = firstNewRound
 }
 
 let resizeObserver = null
@@ -767,6 +828,7 @@ onUnmounted(() => {
 
 .standings-pane { display: grid; gap: 24px; align-items: start; }
 .confirm-text { color: var(--text-secondary); }
+.next-round-hint { margin-top: 8px; color: var(--text-secondary); font-size: 14px; }
 .add-player-note { margin-top: 8px; }
 .unfinished-list { display: grid; gap: 6px; margin: 12px 0; list-style: none; }
 .unfinished-list button { width: 100%; justify-content: flex-start; }
@@ -792,6 +854,6 @@ onUnmounted(() => {
 
 @media (min-width: 1040px) {
   .courts:not(.single-court) { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-  .standings-pane { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+  .standings-pane:not(.bracket-layout) { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 }
 </style>

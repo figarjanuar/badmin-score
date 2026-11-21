@@ -31,7 +31,7 @@
           <div class="game-heading">
             <span class="game-icon"><AppIcon :name="game.mode === 'club' ? 'players' : 'court'" /></span>
             <div class="game-identity">
-              <p class="game-mode">{{ game.mode === 'club' ? 'Club vs Club' : 'Player rotation' }} · {{ getMatchCategory(game.category).label }}</p>
+              <p class="game-mode">{{ getSessionModeLabel(game.mode) }} · {{ getMatchCategory(game.category).label }}</p>
               <h3>{{ game.name || 'Session ' + formatDate(game.createdAt) }}</h3>
               <p class="game-meta">
                 <AppIcon name="calendar" />
@@ -91,6 +91,7 @@ import { usePwaInstall } from '../composables/usePwaInstall.js'
 import { firebaseReady } from '../config/firebase.js'
 import { getFinalMatchResult } from '../composables/matchScores.js'
 import { getMatchCategory } from '../composables/matchCategories.js'
+import { getSessionModeLabel } from '../composables/sessionModes.js'
 import AppIcon from '../components/AppIcon.vue'
 import AppDialog from '../components/AppDialog.vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -107,7 +108,7 @@ const sessions = computed(() => [...games.value]
     const courts = game.rounds.flatMap((round) => round.courts)
     return {
       game,
-      total: courts.length,
+      total: game.mode === 'knockout' ? game.entries.length - 1 : courts.length,
       confirmed: courts.filter((court) => getFinalMatchResult(court, game)).length,
     }
   }))

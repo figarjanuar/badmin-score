@@ -16,27 +16,9 @@
       </button>
     </nav>
 
-    <section v-show="step === 0" class="config-panel surface">
-      <fieldset class="field mode-field">
-        <legend class="field-label">Choose a mode</legend>
-        <label v-for="mode in gameModes" :key="mode.id" class="mode-option">
-          <input v-model="gameMode" type="radio" name="game-mode" :value="mode.id" />
-          <span>
-            <strong>{{ mode.title }}</strong>
-            <small>{{ mode.description }}</small>
-          </span>
-        </label>
-      </fieldset>
-
+    <section v-show="step === 0" class="config-panel session-setup surface">
       <div class="field">
-        <label for="match-category" class="field-label">Match category</label>
-        <select id="match-category" v-model="category" class="input">
-          <option v-for="option in matchCategories" :key="option.id" :value="option.id">{{ option.label }}</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="event-name" class="field-label">Session name <span class="optional">(optional)</span></label>
+        <label for="event-name" class="field-label">Match name <span class="optional">(optional)</span></label>
         <input
           id="event-name"
           v-model="eventName"
@@ -45,12 +27,21 @@
           placeholder="e.g. Friday badminton"
         />
       </div>
+
+      <SessionModePicker v-model="gameMode" />
+
+      <div class="field">
+        <label for="match-category" class="field-label">Match category</label>
+        <select id="match-category" v-model="category" class="input" :disabled="isMexicano">
+          <option v-for="option in matchCategories" :key="option.id" :value="option.id">{{ option.label }}</option>
+        </select>
+      </div>
     </section>
 
     <ClubMatchConfig ref="clubConfig" v-show="gameMode === 'club' && step > 0" :step="step"
       :category="category" @back="showStep(1)" @create="saveGame" />
 
-    <section v-show="gameMode === 'rotation' && step === 1" class="config-panel surface">
+    <section v-show="gameMode !== 'club' && step === 1" class="config-panel surface">
       <!-- Court count -->
       <div class="field">
         <p class="field-label">Number of courts</p>
@@ -58,8 +49,14 @@
           decrease-label="Decrease court count" increase-label="Increase court count" />
       </div>
 
-      <!-- Rotation mode -->
-      <div v-if="category === 'doubles'" class="field">
+      <div v-if="isMexicano" class="field">
+        <label for="points-target" class="field-label">Points to win</label>
+        <select id="points-target" v-model.number="pointsTarget" class="input" aria-describedby="mexicano-rules">
+          <option v-for="target in mexicanoTargets" :key="target" :value="target">{{ target }} points</option>
+        </select>
+        <p id="mexicano-rules" class="mode-desc">One game per court. The first pair to the target wins, and both players keep every point their pair scores.</p>
+      </div>
+      <div v-else-if="!isTournament && category === 'doubles'" class="field">
         <p class="field-label">Rotation mode</p>
         <div class="mode-toggle">
           <button
@@ -85,9 +82,18 @@
             : 'More rounds so every player partners with everyone else.' }}
         </p>
       </div>
+      <p v-if="isTournament" class="mode-desc">
+        {{ gameMode === 'knockout'
+          ? 'Entrants are drawn into the bracket at random. A bye advances an entrant without playing.'
+          : 'Every entrant plays every other entrant once.' }}
+      </p>
     </section>
 
-    <section v-show="gameMode === 'rotation' && step === 2" class="config-panel surface">
+    <section v-show="isTournament && step === 2" class="config-panel surface">
+      <TournamentRosterConfig :mode="gameMode" :category="category" :num-courts="numCourts" @create="saveGame" />
+    </section>
+
+    <section v-show="gameMode !== 'club' && !isTournament && step === 2" class="config-panel surface">
       <!-- Player names -->
       <div class="field">
         <div class="field-row">
@@ -162,7 +168,7 @@
           <span>Resting per round</span>
           <strong>{{ filledPlayers.length - effectiveMinPlayers }}</strong>
         </div>
-        <div class="summary-row">
+        <div v-if="!isMexicano" class="summary-row">
           <span>Estimated rounds</span>
           <strong>{{ targetRounds }}</strong>
         </div>
@@ -174,7 +180,7 @@
         :disabled="!readyToGenerate"
         @click="generate"
       >
-        Create schedule
+        {{ isMexicano ? 'Start Mexicano' : 'Create schedule' }}
       </button>
 
       <p v-if="!readyToGenerate" class="error-hint">
@@ -197,28 +203,35 @@ import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { generateSession, estimateCategoryRounds, estimateRounds, estimateRoundsCompletePartner } from '../composables/useRotation.js'
 import { getMatchCategory, hasCourtRoster, matchCategories, mixedGroups } from '../composables/matchCategories.js'
+import { createMexicanoSession, defaultMexicanoTarget, mexicanoTargets } from '../composables/mexicano.js'
+import { isTournamentMode } from '../composables/sessionModes.js'
 import AppIcon from '../components/AppIcon.vue'
 import NumberStepper from '../components/NumberStepper.vue'
 import PageHeading from '../components/PageHeading.vue'
 import ClubMatchConfig from '../components/ClubMatchConfig.vue'
+import SessionModePicker from '../components/SessionModePicker.vue'
+import TournamentRosterConfig from '../components/TournamentRosterConfig.vue'
 
 const router = useRouter()
 const { addGame } = useStorage()
 
 const eventName = ref('')
 const gameMode = ref('rotation')
-const category = ref('doubles')
+const isMexicano = computed(() => gameMode.value === 'mexicano')
+const isTournament = computed(() => isTournamentMode(gameMode.value))
+const selectedCategory = ref('doubles')
+const category = computed({
+  get: () => isMexicano.value ? 'doubles' : selectedCategory.value,
+  set: (value) => { selectedCategory.value = value },
+})
+const pointsTarget = ref(defaultMexicanoTarget)
 const step = ref(0)
 const clubConfig = ref(null)
 const namesToPaste = ref('')
 const steps = computed(() => gameMode.value === 'club'
-  ? ['Mode & session', category.value === 'singles' ? 'Clubs & players' : 'Clubs & pairs', 'Schedule']
-  : ['Mode & session', 'Settings', 'Players']
+  ? ['Match setup', category.value === 'singles' ? 'Clubs & players' : 'Clubs & pairs', 'Schedule']
+  : ['Match setup', 'Settings', isTournament.value ? 'Entries' : 'Players']
 )
-const gameModes = [
-  { id: 'rotation', title: 'Player rotation', description: 'Automatically assign partners and opponents from your roster.' },
-  { id: 'club', title: 'Club vs Club', description: 'Schedule matches between players or pairs from different clubs.' },
-]
 const numCourts = ref(2)
 const rotationMode = ref('americano')
 
@@ -308,7 +321,9 @@ function generate() {
   const roster = filledPlayers.value.map(({ id, name, mixedGroup }) =>
     category.value === 'mixed' ? { id, name: name.trim(), mixedGroup } : { id, name: name.trim() }
   )
-  const game = generateSession(numCourts.value, roster, rotationMode.value, category.value)
+  const game = isMexicano.value
+    ? createMexicanoSession(numCourts.value, roster, pointsTarget.value)
+    : generateSession(numCourts.value, roster, rotationMode.value, category.value)
   if (game) saveGame(game)
 }
 
@@ -360,29 +375,8 @@ function saveGame(game) {
 .config-step[aria-current="step"] .step-number { background: var(--primary); color: var(--on-primary); }
 
 .config-panel { padding: clamp(16px, 4vw, 28px); }
+.session-setup { display: grid; gap: 20px; }
 .field + .field { margin-top: 20px; }
-.mode-field { min-width: 0; border: 0; }
-.mode-option {
-  position: relative;
-  display: block;
-  padding: 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  background: var(--input-bg);
-  cursor: pointer;
-}
-.mode-option + .mode-option { margin-top: 8px; }
-.mode-option:has(input:checked) { border-color: var(--primary); background: var(--primary-bg); }
-.mode-option:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 3px; }
-.mode-option input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-.mode-option small { display: block; color: var(--text-secondary); font-size: 14px; }
 
 .step-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .field-label { display: block; margin-bottom: 8px; color: var(--text-primary); font-size: 15px; font-weight: 700; }

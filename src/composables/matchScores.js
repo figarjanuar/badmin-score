@@ -1,3 +1,5 @@
+import { isTournamentMode } from './sessionModes.js'
+
 export function getMatchSets(court) {
   return [court, ...(court.extraSets || [])]
 }
@@ -16,7 +18,18 @@ export function getFinalMatchResult(court, game) {
   const legacyResult = court.confirmed === undefined && game.completed
   if (court.confirmed !== true && !legacyResult) return null
 
-  return getMatchResult(getMatchSets(court), game.mode !== 'club')
+  return getSessionMatchResult(court, game)
+}
+
+export function getSessionMatchResult(court, game) {
+  if (game.mode === 'mexicano') {
+    const { score1, score2 } = court
+    const target = game.pointsTarget
+    if (!Number.isInteger(score1) || !Number.isInteger(score2) || Math.min(score1, score2) < 0
+      || Math.max(score1, score2) !== target || score1 === score2 || court.extraSets?.length) return null
+  }
+  const allowDraw = game.mode !== 'club' && game.mode !== 'mexicano' && !isTournamentMode(game.mode)
+  return getMatchResult(getMatchSets(court), allowDraw)
 }
 
 export function getCourtStatus(court, game) {

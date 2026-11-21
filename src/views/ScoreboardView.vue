@@ -1,7 +1,8 @@
 <template>
   <div class="page scoreboard">
     <PageHeading :title="game?.name || 'Session results'"
-      :label="'Session results · ' + getMatchCategory(game?.category).label" :description="formatDate(game?.createdAt)">
+      :label="getSessionModeLabel(game?.mode) + ' results · ' + getMatchCategory(game?.category).label"
+      :description="formatDate(game?.createdAt)">
       <template #actions>
         <button type="button" class="action-button" @click="openShare"><AppIcon name="share" /> Share results</button>
         <button v-if="game?.completed" type="button" class="action-button ghost" @click="showReopenConfirm = true">
@@ -13,26 +14,29 @@
     <!-- Session summary -->
     <div class="sb-summary surface">
       <div class="stat">
-        <span class="stat-value">{{ isClub ? game.clubs.length : game?.players.length || 0 }}</span>
-        <span class="stat-label">{{ isClub ? 'Clubs' : 'Players' }}</span>
+        <span class="stat-value">{{ isClub ? game.clubs.length : isTournament ? game.entries.length : game?.players.length || 0 }}</span>
+        <span class="stat-label">{{ isClub ? 'Clubs' : isTournament && game.category !== 'singles' ? 'Pairs' : 'Players' }}</span>
       </div>
       <div class="stat">
         <span class="stat-value">{{ game?.numCourts || 0 }}</span>
         <span class="stat-label">Courts</span>
       </div>
       <div class="stat">
-        <span class="stat-value">{{ isClub ? allMatches.length : game?.rounds.length || 0 }}</span>
-        <span class="stat-label">{{ isClub ? 'Matches' : 'Rounds' }}</span>
+        <span class="stat-value">{{ isClub || isTournament ? allMatches.length : game?.rounds.length || 0 }}</span>
+        <span class="stat-label">{{ isClub || isTournament ? 'Matches' : 'Rounds' }}</span>
       </div>
     </div>
 
-    <div class="results-detail">
-      <StandingsTable :game-id="gameId" />
+    <div class="results-detail" :class="{ 'bracket-layout': isKnockout }">
+      <KnockoutBracket v-if="isKnockout" :game="game" />
+      <StandingsTable v-else :game-id="gameId" />
       <MatchHistory :matches="confirmedMatches" :single-court-club="isSingleCourtClub" />
     </div>
 
     <AppDialog v-if="showReopenConfirm" title="Reopen session?" @close="showReopenConfirm = false">
-      <p>The session will be active again. Choose Correct result on any match you need to edit.</p>
+      <p>{{ isKnockout
+        ? 'The session will be active again. Choose Correct result to edit the final.'
+        : 'The session will be active again. Choose Correct result on any match you need to edit.' }}</p>
       <template #actions>
         <button type="button" class="action-button" @click="showReopenConfirm = false">Cancel</button>
         <button type="button" class="action-button primary" @click="confirmReopen">Reopen</button>
@@ -49,8 +53,10 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getFinalMatchResult } from '../composables/matchScores.js'
 import { getMatchCategory } from '../composables/matchCategories.js'
+import { getSessionModeLabel, isTournamentMode } from '../composables/sessionModes.js'
 import AppDialog from '../components/AppDialog.vue'
 import AppIcon from '../components/AppIcon.vue'
+import KnockoutBracket from '../components/KnockoutBracket.vue'
 import ShareModal from '../components/ShareModal.vue'
 import { useStorage } from '../composables/useStorage.js'
 import { useStandings } from '../composables/useStandings.js'
@@ -69,6 +75,8 @@ const showShare = ref(false)
 const shareUrl = ref('')
 const game = computed(() => getGame(props.gameId))
 const isClub = computed(() => game.value?.mode === 'club')
+const isKnockout = computed(() => game.value?.mode === 'knockout')
+const isTournament = computed(() => isTournamentMode(game.value?.mode))
 const isSingleCourtClub = computed(() => isClub.value && game.value.numCourts === 1)
 const { allMatches, confirmedMatches } = useStandings(game)
 
@@ -124,6 +132,6 @@ function confirmReopen() {
 .results-detail { display: grid; align-items: start; gap: 24px; }
 
 @media (min-width: 1040px) {
-  .results-detail { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+  .results-detail:not(.bracket-layout) { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 }
 </style>

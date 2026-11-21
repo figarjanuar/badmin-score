@@ -35,7 +35,7 @@
             <tr v-for="game in visibleGames" :key="game.id">
               <th scope="row">
                 {{ gameName(game) }}
-                <span class="match-mode muted">{{ gameMode(game) }}</span>
+                <span class="match-mode muted">{{ getSessionModeLabel(game.mode) }}</span>
               </th>
               <td>{{ formatDate(game.createdAt) }}</td>
               <td class="creator-name">{{ game.createdBy || '—' }}</td>
@@ -65,7 +65,7 @@
         <dt>Match ID</dt><dd>{{ selected.id }}</dd>
         <dt>Created</dt><dd>{{ formatDate(selected.createdAt) }}</dd>
         <dt>Created by</dt><dd>{{ selected.createdBy || '—' }}</dd>
-        <dt>Mode</dt><dd>{{ gameMode(selected) }}</dd>
+        <dt>Mode</dt><dd>{{ getSessionModeLabel(selected.mode) }}</dd>
         <dt>Status</dt><dd>{{ selected.completed ? 'Completed' : 'In progress' }}</dd>
         <dt>Courts</dt><dd>{{ selected.numCourts ?? '—' }}</dd>
         <dt>Rounds</dt><dd>{{ selected.rounds?.length ?? 0 }}</dd>
@@ -89,6 +89,7 @@ import PageHeading from '../components/PageHeading.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { hasAdminSession, signOutAdmin } from '../composables/adminAuth.js'
 import { useStorage } from '../composables/useStorage.js'
+import { getSessionModeLabel } from '../composables/sessionModes.js'
 
 const router = useRouter()
 const { listGamesPage } = useStorage()
@@ -112,10 +113,6 @@ function formatDate(value) {
 
 function gameName(game) {
   return game.name || 'Untitled match'
-}
-
-function gameMode(game) {
-  return game.mode === 'club' ? 'Club vs Club' : 'Player rotation'
 }
 
 function matchRoute(game) {

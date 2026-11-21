@@ -1,7 +1,7 @@
 <template>
   <section class="standings-table-wrap" :aria-labelledby="headingId">
     <div class="standings-heading">
-      <h2 :id="headingId">{{ isClub ? 'Club standings' : 'Standings' }}</h2>
+      <h2 :id="headingId">{{ isClub ? 'Club standings' : isPairStandings ? 'Pair standings' : 'Standings' }}</h2>
       <div ref="info" class="standings-info" @pointerenter="showOnHover" @pointerleave="hovered = false">
         <button type="button" class="action-button icon info-button" aria-label="How standings are calculated"
           :aria-expanded="showInfo" :aria-controls="infoId" @click="toggleInfo">
@@ -10,12 +10,12 @@
         <div v-show="showInfo" :id="infoId" class="info-panel">
           <dl>
             <div><dt>Played</dt><dd>Confirmed matches / scheduled matches</dd></div>
+            <div v-if="isMexicano"><dt>Points</dt><dd>Total points scored by the player’s pairs in confirmed matches</dd></div>
+            <div v-if="isRoundRobin"><dt>± Sets</dt><dd>Sets won minus sets lost</dd></div>
             <div><dt>± Pts</dt><dd>Points scored minus points conceded</dd></div>
-            <div><dt>Win %</dt><dd>Percentage of confirmed matches won</dd></div>
+            <div v-if="showWinRate"><dt>Win %</dt><dd>Percentage of confirmed matches won</dd></div>
           </dl>
-          <p>{{ isClub
-            ? 'Ranked by win percentage, then point difference.'
-            : 'Ranked by wins, then point difference, then win percentage.' }}</p>
+          <p>{{ rankingDescription }}</p>
         </div>
       </div>
     </div>
@@ -26,12 +26,16 @@
         <thead>
           <tr>
             <th scope="col" class="col-rank" aria-label="Rank">#</th>
-            <th scope="col" class="col-name">{{ isClub ? 'Club' : 'Player' }}</th>
+            <th scope="col" class="col-name">{{ isClub ? 'Club' : isPairStandings ? 'Pair' : 'Player' }}</th>
             <th scope="col" class="col-num">Played</th>
-            <th scope="col" class="col-num">Won</th>
-            <th scope="col" class="col-num">Lost</th>
+            <th v-if="isMexicano" scope="col" class="col-num">Points</th>
+            <template v-else>
+              <th scope="col" class="col-num">Won</th>
+              <th scope="col" class="col-num">Lost</th>
+            </template>
+            <th v-if="isRoundRobin" scope="col" class="col-num" aria-label="Set difference">± Sets</th>
             <th scope="col" class="col-num" aria-label="Point difference">± Pts</th>
-            <th scope="col" class="col-num" aria-label="Win percentage">Win %</th>
+            <th v-if="showWinRate" scope="col" class="col-num" aria-label="Win percentage">Win %</th>
           </tr>
         </thead>
         <tbody>
@@ -48,10 +52,14 @@
             <td class="col-rank">{{ item.rank ?? idx + 1 }}</td>
             <th scope="row" class="col-name">{{ item.name }}</th>
             <td class="col-num">{{ item.gamesPlayed }}/{{ item.totalGames }}</td>
-            <td class="col-num col-win">{{ item.wins }}</td>
-            <td class="col-num col-loss">{{ item.losses }}</td>
-            <td class="col-num">{{ item.pointDiff > 0 ? '+' : '' }}{{ item.pointDiff }}</td>
-            <td class="col-num col-wr">{{ item.winRate }}%</td>
+            <td v-if="isMexicano" class="col-num col-emphasis">{{ item.points }}</td>
+            <template v-else>
+              <td class="col-num col-win">{{ item.wins }}</td>
+              <td class="col-num col-loss">{{ item.losses }}</td>
+            </template>
+            <td v-if="isRoundRobin" class="col-num">{{ formatDiff(item.setDiff) }}</td>
+            <td class="col-num">{{ formatDiff(item.pointDiff) }}</td>
+            <td v-if="showWinRate" class="col-num col-emphasis">{{ item.winRate }}%</td>
           </tr>
         </tbody>
       </table>
@@ -73,6 +81,16 @@ const { getGame } = useStorage()
 const game = computed(() => getGame(props.gameId))
 const { standings } = useStandings(game)
 const isClub = computed(() => game.value?.mode === 'club')
+const isMexicano = computed(() => game.value?.mode === 'mexicano')
+const isRoundRobin = computed(() => game.value?.mode === 'roundRobin')
+const isPairStandings = computed(() => isRoundRobin.value && game.value.category !== 'singles')
+const showWinRate = computed(() => !isMexicano.value && !isRoundRobin.value)
+const rankingDescription = computed(() => {
+  if (isRoundRobin.value) return 'Ranked by matches won, then set difference, then point difference.'
+  if (isMexicano.value) return 'Ranked by total points, then point difference.'
+  if (isClub.value) return 'Ranked by win percentage, then point difference.'
+  return 'Ranked by wins, then point difference, then win percentage.'
+})
 const hasResults = computed(() => standings.value.some((item) => item.gamesPlayed > 0))
 const headingId = useId()
 const infoId = useId()
@@ -80,6 +98,10 @@ const info = ref(null)
 const hovered = ref(false)
 const pinned = ref(false)
 const showInfo = computed(() => hovered.value || pinned.value)
+
+function formatDiff(value) {
+  return value > 0 ? '+' + value : value
+}
 
 function showOnHover(event) {
   if (event.pointerType === 'mouse') hovered.value = true
@@ -113,10 +135,10 @@ onUnmounted(() => {
 })
 
 const winnerMessage = computed(() => {
-  if (!isClub.value || !game.value.completed || !hasResults.value) return ''
-  const leaders = standings.value.filter((club) => club.rank === 1)
+  if ((!isClub.value && !isMexicano.value && !isRoundRobin.value) || !game.value.completed || !hasResults.value) return ''
+  const leaders = standings.value.filter((item) => item.rank === 1)
   if (leaders.length === 1) return 'Winner: ' + leaders[0].name
-  return 'Tied for first: ' + leaders.map((club) => club.name).join(', ')
+  return 'Tied for first: ' + leaders.map((item) => item.name).join(', ')
 })
 </script>
 
@@ -222,7 +244,7 @@ const winnerMessage = computed(() => {
   font-weight: 600;
 }
 
-.col-wr {
+.col-emphasis {
   font-weight: 700;
   color: var(--primary);
 }

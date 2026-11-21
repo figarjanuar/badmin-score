@@ -1,5 +1,7 @@
 import { computed } from 'vue'
 import { getFinalMatchResult, getMatchSets } from './matchScores.js'
+import { getMexicanoStandings } from './mexicano.js'
+import { getRoundRobinStandings } from './tournaments.js'
 
 /**
  * Standings + rotation stats derived from a game. Shared by ScoreboardView
@@ -88,6 +90,8 @@ export function useStandings(game) {
   const standings = computed(() => {
     if (!game.value) return []
     if (game.value.mode === 'club') return clubStandings.value
+    if (game.value.mode === 'roundRobin') return getRoundRobinStandings(game.value)
+    if (game.value.mode === 'mexicano') return getMexicanoStandings(game.value).filter((player) => player.gamesPlayed > 0)
     const playerStats = {}
 
     game.value.players.forEach((p) => {
