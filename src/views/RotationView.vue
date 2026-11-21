@@ -1,6 +1,6 @@
 <template>
   <div class="page rotation">
-    <PageHeading :title="game?.name || 'Rotation'" :label="isClub ? 'Club vs Club' : 'Player rotation'">
+    <PageHeading :title="game?.name || 'Rotation'" :label="(isClub ? 'Club vs Club' : 'Player rotation') + ' · ' + category.label">
       <template #actions>
         <button type="button" class="action-button" @click="openShare">
           <AppIcon name="share" /> Share
@@ -153,10 +153,11 @@
             @blur="renamePlayer(p.id, $event.target.value)"
             @keyup.enter="$event.target.blur()"
           />
+          <span v-if="isMixed" class="muted">{{ mixedGroups.find((group) => group.id === p.mixedGroup)?.label }}</span>
           <button
             v-if="!isClub"
             class="action-button ghost icon player-remove"
-            :disabled="game?.completed || activePlayers.length <= minPlayers"
+            :disabled="game?.completed || !canRemovePlayer(p)"
             @click="requestDelete(p)"
             :aria-label="'Remove ' + p.name + ' from rotation'"
           ><AppIcon name="close" /></button>
@@ -169,7 +170,10 @@
       >
         Add player
       </button>
-      <p v-if="!isClub && activePlayers.length <= minPlayers" class="error-hint">
+      <p v-if="!isClub && isMixed" class="muted">
+        Mixed doubles needs two men and two women per court.
+      </p>
+      <p v-else-if="!isClub && activePlayers.length <= minPlayers" class="error-hint">
         At least {{ minPlayers }} players required for {{ game?.numCourts }} {{ game?.numCourts === 1 ? 'court' : 'courts' }}.
       </p>
 
@@ -253,10 +257,17 @@
         placeholder="Player name"
         @keyup.enter="confirmAddPlayer"
       />
+      <div v-if="isMixed" class="add-player-note">
+        <label for="new-player-group">Mixed doubles group</label>
+        <select id="new-player-group" v-model="newPlayerGroup" class="input">
+          <option value="">Select group</option>
+          <option v-for="group in mixedGroups" :key="group.id" :value="group.id">{{ group.label }}</option>
+        </select>
+      </div>
       <p class="confirm-text add-player-note">The new player will join in upcoming rounds.</p>
       <template #actions>
         <button class="action-button" @click="showAddPlayer = false">Cancel</button>
-        <button class="action-button primary" :disabled="!newPlayerName.trim()" @click="confirmAddPlayer">Save</button>
+        <button class="action-button primary" :disabled="!canAddPlayer" @click="confirmAddPlayer">Save</button>
       </template>
     </AppDialog>
 
@@ -278,6 +289,7 @@ import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
 import { useStandings } from '../composables/useStandings.js'
 import { getCourtStatus, getFinalMatchResult, getMatchResult, getMatchSets, hasSetScore, matchStatusLabels } from '../composables/matchScores.js'
+import { getMatchCategory, hasCourtRoster, mixedGroups } from '../composables/matchCategories.js'
 import AppDialog from '../components/AppDialog.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { generateId, generateNextRound, regenerateRemainingRounds, computeKeptCount } from '../composables/useRotation.js'
@@ -295,6 +307,8 @@ const router = useRouter()
 
 const { getGame, updateGame, getSyncStatus, shareGame } = useStorage()
 const game = computed(() => getGame(props.gameId))
+const category = computed(() => getMatchCategory(game.value?.category))
+const isMixed = computed(() => category.value.id === 'mixed')
 const isClub = computed(() => game.value?.mode === 'club')
 const isSingleCourtClub = computed(() => isClub.value && game.value.numCourts === 1)
 const { allMatches, confirmedMatches, clubByPlayer } = useStandings(game)
@@ -318,6 +332,8 @@ const activeTab = ref('skor')
 const deleteTarget = ref(null)
 const showAddPlayer = ref(false)
 const newPlayerName = ref('')
+const newPlayerGroup = ref('')
+const canAddPlayer = computed(() => !!newPlayerName.value.trim() && (!isMixed.value || !!newPlayerGroup.value))
 const addPlayerInput = ref(null)
 
 // Scoreboard inline edit state
@@ -346,12 +362,12 @@ const playerGroups = computed(() => {
   const players = new Map(activePlayers.value.map((player) => [player.id, player]))
   return game.value.clubs.flatMap((club) => club.teams.map((team, index) => ({
     id: team.id,
-    label: club.name + ' · Team ' + (index + 1),
+    label: club.name + ' · ' + (category.value.sideSize === 1 ? 'Player ' : 'Team ') + (index + 1),
     players: team.playerIds.map((id) => players.get(id)),
   })))
 })
 const inactivePlayers = computed(() => (game.value?.players || []).filter((p) => p.inactive))
-const minPlayers = computed(() => game.value?.numCourts * 4 || 0)
+const minPlayers = computed(() => (game.value?.numCourts || 0) * category.value.sideSize * 2)
 const regeneratedFrom = computed(() => {
   if (!deleteTarget.value || !game.value) return null
   return computeKeptCount(game.value.rounds, currentRound.value)
@@ -368,8 +384,7 @@ function playerName(id) {
  */
 function applyPlayerChange(newPlayers) {
   if (game.value?.completed) return false
-  const activeIds = newPlayers.filter((p) => !p.inactive).map((p) => p.id)
-  const result = regenerateRemainingRounds(game.value, activeIds, currentRound.value)
+  const result = regenerateRemainingRounds(game.value, newPlayers.filter((p) => !p.inactive), currentRound.value)
   if (result === null) {
     alert('Could not reschedule the rounds. Try again.')
     return false
@@ -389,9 +404,13 @@ function renamePlayer(id, rawName) {
   updateGame(props.gameId, { players })
 }
 
+function canRemovePlayer(p) {
+  const remaining = activePlayers.value.filter((player) => player.id !== p.id)
+  return hasCourtRoster(category.value.id, game.value.numCourts, remaining)
+}
+
 function requestDelete(p) {
-  if (game.value?.completed) return
-  if (activePlayers.value.length <= minPlayers.value) return
+  if (game.value?.completed || !canRemovePlayer(p)) return
   deleteTarget.value = p
 }
 
@@ -415,18 +434,17 @@ function restorePlayer(p) {
 
 function openAddPlayer() {
   newPlayerName.value = ''
+  newPlayerGroup.value = ''
   showAddPlayer.value = true
   nextTick(() => addPlayerInput.value?.focus())
 }
 
 function confirmAddPlayer() {
-  const name = newPlayerName.value.trim()
-  if (!name) {
-    alert('Enter a player name.')
-    return
-  }
+  if (!canAddPlayer.value) return
   const nextId = Math.max(0, ...game.value.players.map((p) => p.id)) + 1
-  const players = [...game.value.players, { id: nextId, name }]
+  const player = { id: nextId, name: newPlayerName.value.trim() }
+  if (isMixed.value) player.mixedGroup = newPlayerGroup.value
+  const players = [...game.value.players, player]
   if (applyPlayerChange(players)) {
     showAddPlayer.value = false
     newPlayerName.value = ''

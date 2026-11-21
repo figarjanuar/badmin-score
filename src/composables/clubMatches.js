@@ -1,4 +1,5 @@
 import { generateId, shuffle } from './useRotation.js'
+import { getMatchCategory, mixedGroups } from './matchCategories.js'
 
 export function randomClubMatches(clubs, count, numCourts) {
   const played = new Map()
@@ -46,16 +47,23 @@ export function groupClubMatches(matches, numCourts) {
   return rounds
 }
 
-export function createClubGame(clubs, plannedRounds, teams, numCourts) {
-  const playerIds = (team) => team.players.map((player) => player.id)
+export function createClubGame(clubs, plannedRounds, teams, numCourts, category = 'doubles') {
+  const { sideSize } = getMatchCategory(category)
+  const teamPlayers = (team) => team.players.slice(0, sideSize)
+  const playerIds = (team) => teamPlayers(team).map((player) => player.id)
 
   return {
     id: generateId(),
     createdAt: new Date().toISOString(),
     mode: 'club',
+    category,
     numCourts,
     players: clubs.flatMap((club) => club.teams.flatMap((team) =>
-      team.players.map((player) => ({ id: player.id, name: player.name.trim() }))
+      teamPlayers(team).map((player, index) => ({
+        id: player.id,
+        name: player.name.trim(),
+        ...(category === 'mixed' ? { mixedGroup: mixedGroups[index].id } : {}),
+      }))
     )),
     clubs: clubs.map((club) => ({
       id: club.id,

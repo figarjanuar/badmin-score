@@ -1,6 +1,7 @@
 <template>
   <div class="page scoreboard">
-    <PageHeading :title="game?.name || 'Session results'" label="Session results" :description="formatDate(game?.createdAt)">
+    <PageHeading :title="game?.name || 'Session results'"
+      :label="'Session results · ' + getMatchCategory(game?.category).label" :description="formatDate(game?.createdAt)">
       <template #actions>
         <button type="button" class="action-button" @click="openShare"><AppIcon name="share" /> Share results</button>
         <button v-if="game?.completed" type="button" class="action-button ghost" @click="showReopenConfirm = true">
@@ -47,6 +48,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getFinalMatchResult } from '../composables/matchScores.js'
+import { getMatchCategory } from '../composables/matchCategories.js'
 import AppDialog from '../components/AppDialog.vue'
 import AppIcon from '../components/AppIcon.vue'
 import ShareModal from '../components/ShareModal.vue'

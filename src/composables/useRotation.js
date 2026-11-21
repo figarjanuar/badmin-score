@@ -1,4 +1,5 @@
 import { getMatchSets, hasSetScore } from './matchScores.js'
+import { hasCourtRoster, mixedGroups } from './matchCategories.js'
 
 export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -73,16 +74,16 @@ function bestCourtGroup(candidates, encounterCounts, gameCounts, consecutivePlay
   return best
 }
 
-function bestPairing(pool, partnershipCounts) {
+function bestPairing(pool, partnershipCounts, mixed = false) {
   // pool is 4 player ids
   // There are 3 ways to split 4 players into 2 pairs.
   // Pick the one that minimizes repeat partnerships.
   const [p1, p2, p3, p4] = pool
   const pairings = [
-    { pair1: [p1, p2], pair2: [p3, p4] },
     { pair1: [p1, p3], pair2: [p2, p4] },
     { pair1: [p1, p4], pair2: [p2, p3] },
   ]
+  if (!mixed) pairings.unshift({ pair1: [p1, p2], pair2: [p3, p4] })
 
   let best = null
   let bestScore = Infinity
@@ -120,7 +121,48 @@ export function estimateRoundsCompletePartner(numCourts, totalPlayers) {
   return Math.max(1, Math.floor(totalPairs / pairsPerRound))
 }
 
-function buildRounds(numCourts, playerIds, rounds, initialGameCounts, initialEncounterCounts, initialPartnershipCounts, initialConsecutivePlays, playCountWeight = 0) {
+export function estimateCategoryRounds(category, numCourts, players) {
+  if (category === 'singles') {
+    const targetGames = Math.min(4, players.length - 1)
+    return Math.max(1, Math.ceil(players.length * targetGames / (numCourts * 2)))
+  }
+  const groupSizes = mixedGroups.map(({ id }) =>
+    players.filter((player) => player.mixedGroup === id).length
+  )
+  const targetGames = Math.min(4, ...groupSizes)
+  return Math.max(1, Math.ceil(Math.max(...groupSizes) * targetGames / (numCourts * 2)))
+}
+
+function chooseCourt(available, seeds, mixedGroupByPlayer, category, playCountWeight) {
+  const { encounterCounts, gameCounts, consecutivePlays, partnershipCounts } = seeds
+  if (category === 'singles') {
+    const [first, ...opponents] = available
+    if (!opponents.length) return null
+    const [second] = opponents.sort((a, b) =>
+      gameCounts.get(a) - gameCounts.get(b)
+      || (encounterCounts.get(pairKey(first, a)) || 0) - (encounterCounts.get(pairKey(first, b)) || 0)
+    )
+    return { pair1: [first], pair2: [second] }
+  }
+  if (category === 'mixed') {
+    const groups = mixedGroups.map(({ id }) =>
+      available.filter((playerId) => mixedGroupByPlayer.get(playerId) === id).slice(0, 2)
+    )
+    return groups.every((group) => group.length === 2)
+      ? bestPairing(groups.flat(), partnershipCounts, true)
+      : null
+  }
+  const group = bestCourtGroup(available, encounterCounts, gameCounts, consecutivePlays, playCountWeight)
+  return group && bestPairing(group, partnershipCounts)
+}
+
+function buildRounds(numCourts, players, rounds, seeds = {}, playCountWeight = 0, category = 'doubles') {
+  const playerIds = players.map((player) => player.id)
+  const mixedGroupByPlayer = category === 'mixed'
+    ? new Map(players.map((player) => [player.id, player.mixedGroup]))
+    : null
+  const { gameCounts: initialGameCounts, encounterCounts: initialEncounterCounts,
+    partnershipCounts: initialPartnershipCounts, consecutivePlays: initialConsecutivePlays } = seeds
   const gameCounts = initialGameCounts || new Map()
   if (!initialGameCounts) {
     playerIds.forEach((id) => gameCounts.set(id, 0))
@@ -132,6 +174,7 @@ function buildRounds(numCourts, playerIds, rounds, initialGameCounts, initialEnc
   if (!initialConsecutivePlays) {
     playerIds.forEach((id) => consecutivePlays.set(id, 0))
   }
+  const tracking = { encounterCounts, gameCounts, consecutivePlays, partnershipCounts }
   const roundsData = []
 
   for (let r = 0; r < rounds; r++) {
@@ -143,17 +186,15 @@ function buildRounds(numCourts, playerIds, rounds, initialGameCounts, initialEnc
     const playing = []
 
     for (let c = 0; c < numCourts; c++) {
-      if (available.length < 4) break
-
-      const group = bestCourtGroup(available, encounterCounts, gameCounts, consecutivePlays, playCountWeight)
-      if (!group) break
+      const pairing = chooseCourt(available, tracking, mixedGroupByPlayer, category, playCountWeight)
+      if (!pairing) break
+      const { pair1, pair2 } = pairing
+      const group = [...pair1, ...pair2]
 
       for (const id of group) {
         available.splice(available.indexOf(id), 1)
       }
       playing.push(...group)
-
-      const { pair1, pair2 } = bestPairing(group, partnershipCounts)
 
       // Update encounter counts for everyone who shared the same court.
       for (const [p1, p2] of groupPairs(group)) {
@@ -162,10 +203,11 @@ function buildRounds(numCourts, playerIds, rounds, initialGameCounts, initialEnc
       }
 
       // Update partnership counts separately so partner repeats are minimized.
-      const k1 = pairKey(pair1[0], pair1[1])
-      const k2 = pairKey(pair2[0], pair2[1])
-      partnershipCounts.set(k1, (partnershipCounts.get(k1) || 0) + 1)
-      partnershipCounts.set(k2, (partnershipCounts.get(k2) || 0) + 1)
+      for (const [first, second] of [pair1, pair2]) {
+        if (second === undefined) continue
+        const key = pairKey(first, second)
+        partnershipCounts.set(key, (partnershipCounts.get(key) || 0) + 1)
+      }
 
       group.forEach((id) => gameCounts.set(id, gameCounts.get(id) + 1))
 
@@ -462,13 +504,13 @@ export function computeKeptCount(rounds, currentRoundIndex) {
  * complete-partner pairing — past rounds and score integrity are preserved.
  *
  * @param {object} game - current game object
- * @param {Array<number>} activePlayerIds - ids of players in the new rotation
+ * @param {Array<object>} activePlayers - players in the new rotation
  * @param {number} currentRoundIndex - round index the user is viewing
  * @returns {object|null} { rounds, regeneratedFrom } or null when the active
  *   pool is too small to fill the courts
  */
-export function regenerateRemainingRounds(game, activePlayerIds, currentRoundIndex) {
-  if (activePlayerIds.length < game.numCourts * 4) return null
+export function regenerateRemainingRounds(game, activePlayers, currentRoundIndex) {
+  if (!hasCourtRoster(game.category, game.numCourts, activePlayers)) return null
 
   const keptCount = computeKeptCount(game.rounds, currentRoundIndex)
   const kept = game.rounds.slice(0, keptCount)
@@ -478,17 +520,8 @@ export function regenerateRemainingRounds(game, activePlayerIds, currentRoundInd
     return { rounds: kept, regeneratedFrom: keptCount }
   }
 
-  const seeds = rebuildTrackingMaps(kept, new Set(activePlayerIds))
-  const result = buildRounds(
-    game.numCourts,
-    activePlayerIds,
-    remaining,
-    seeds.gameCounts,
-    seeds.encounterCounts,
-    seeds.partnershipCounts,
-    seeds.consecutivePlays,
-    0
-  )
+  const seeds = rebuildTrackingMaps(kept, new Set(activePlayers.map((player) => player.id)))
+  const result = buildRounds(game.numCourts, activePlayers, remaining, seeds, 0, game.category)
 
   const newRounds = result.roundsData.map((r, i) => ({ ...r, num: keptCount + i + 1 }))
   return { rounds: [...kept, ...newRounds], regeneratedFrom: keptCount }
@@ -503,14 +536,13 @@ export function regenerateRemainingRounds(game, activePlayerIds, currentRoundInd
  * @returns {object|null} new round object (num set to rounds.length + 1), or null if generation fails
  */
 export function generateNextRound(game) {
-  const playerIds = game.players.filter((p) => !p.inactive).map((p) => p.id)
+  const players = game.players.filter((p) => !p.inactive)
   const numCourts = game.numCourts
 
-  if (playerIds.length < numCourts * 4) return null
+  if (!hasCourtRoster(game.category, numCourts, players)) return null
 
-  const { gameCounts, encounterCounts, partnershipCounts, consecutivePlays } = rebuildTrackingMaps(game.rounds, new Set(playerIds))
-
-  const result = buildRounds(numCourts, playerIds, 1, gameCounts, encounterCounts, partnershipCounts, consecutivePlays, ADD_ROUND_BALANCE_WEIGHT)
+  const seeds = rebuildTrackingMaps(game.rounds, new Set(players.map((player) => player.id)))
+  const result = buildRounds(numCourts, players, 1, seeds, ADD_ROUND_BALANCE_WEIGHT, game.category)
 
   if (!result.roundsData || result.roundsData.length === 0) return null
 
@@ -519,19 +551,30 @@ export function generateNextRound(game) {
   return newRound
 }
 
-export function generateSession(numCourts, players, mode = 'americano') {
+export function generateSession(numCourts, players, mode = 'americano', category = 'doubles') {
+  if (!hasCourtRoster(category, numCourts, players)) return null
   const playerIds = players.map((p) => p.id)
   const totalPlayers = playerIds.length
+  const session = {
+    id: generateId(),
+    createdAt: new Date().toISOString(),
+    numCourts,
+    players,
+    completed: false,
+    category,
+  }
+
+  if (category === 'singles' || category === 'mixed') {
+    const roundCount = estimateCategoryRounds(category, numCourts, players)
+    const { roundsData } = buildRounds(numCourts, players, roundCount, {}, 0, category)
+    return { ...session, rounds: roundsData }
+  }
 
   if (mode === 'completePartner') {
     const best = buildCompletePartnerRounds(numCourts, playerIds)
     return {
-      id: generateId(),
-      createdAt: new Date().toISOString(),
-      numCourts,
-      players,
+      ...session,
       rounds: best.roundsData,
-      completed: false,
       rotationMode: 'completePartner',
     }
   }
@@ -547,7 +590,7 @@ export function generateSession(numCourts, players, mode = 'americano') {
     const attempts = Math.min(200, Math.max(40, totalPlayers * numCourts * 4))
 
     for (let attempt = 0; attempt < attempts; attempt++) {
-      const candidate = buildRounds(numCourts, playerIds, roundBudget)
+      const candidate = buildRounds(numCourts, players, roundBudget)
       if (!best || candidate.score > best.score) {
         best = candidate
       }
@@ -560,12 +603,8 @@ export function generateSession(numCourts, players, mode = 'americano') {
   }
 
   return {
-    id: generateId(),
-    createdAt: new Date().toISOString(),
-    numCourts,
-    players,
+    ...session,
     rounds: best.roundsData,
-    completed: false,
     rotationMode: 'americano',
   }
 }

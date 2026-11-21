@@ -29,6 +29,13 @@
       </fieldset>
 
       <div class="field">
+        <label for="match-category" class="field-label">Match category</label>
+        <select id="match-category" v-model="category" class="input">
+          <option v-for="option in matchCategories" :key="option.id" :value="option.id">{{ option.label }}</option>
+        </select>
+      </div>
+
+      <div class="field">
         <label for="event-name" class="field-label">Session name <span class="optional">(optional)</span></label>
         <input
           id="event-name"
@@ -40,18 +47,19 @@
       </div>
     </section>
 
-    <ClubMatchConfig ref="clubConfig" v-show="gameMode === 'club' && step > 0" :step="step" @back="showStep(1)" @create="saveGame" />
+    <ClubMatchConfig ref="clubConfig" v-show="gameMode === 'club' && step > 0" :step="step"
+      :category="category" @back="showStep(1)" @create="saveGame" />
 
     <section v-show="gameMode === 'rotation' && step === 1" class="config-panel surface">
       <!-- Court count -->
       <div class="field">
         <p class="field-label">Number of courts</p>
-        <NumberStepper :model-value="numCourts" :min="1" :max="6" label="Number of courts"
-          decrease-label="Decrease court count" increase-label="Increase court count" @update:model-value="setCourts" />
+        <NumberStepper v-model="numCourts" :min="1" :max="6" label="Number of courts"
+          decrease-label="Decrease court count" increase-label="Increase court count" />
       </div>
 
       <!-- Rotation mode -->
-      <div class="field">
+      <div v-if="category === 'doubles'" class="field">
         <p class="field-label">Rotation mode</p>
         <div class="mode-toggle">
           <button
@@ -89,7 +97,12 @@
           </button>
         </div>
         <p class="player-progress" aria-live="polite">
-          {{ filledPlayers.length }} entered · {{ effectiveMinPlayers }} required for {{ numCourts }} {{ numCourts === 1 ? 'court' : 'courts' }}
+          <template v-if="category === 'mixed'">
+            {{ mixedRosterCounts[0] }} men · {{ mixedRosterCounts[1] }} women · {{ numCourts * 2 }} of each required
+          </template>
+          <template v-else>
+            {{ filledPlayers.length }} entered · {{ effectiveMinPlayers }} required for {{ numCourts }} {{ numCourts === 1 ? 'court' : 'courts' }}
+          </template>
         </p>
         <details class="paste-players">
           <summary>Paste a list of names</summary>
@@ -105,6 +118,7 @@
             v-for="(player, idx) in players"
             :key="player.id"
             class="player-row"
+            :class="{ 'mixed-player-row': category === 'mixed' }"
           >
             <span class="player-num" aria-hidden="true">{{ idx + 1 }}</span>
             <input
@@ -114,6 +128,11 @@
               :aria-label="'Player name ' + (idx + 1)"
               :placeholder="'Player name ' + (idx + 1)"
             />
+            <select v-if="category === 'mixed'" v-model="player.mixedGroup" class="input mixed-group-input"
+              :aria-label="'Mixed doubles group for player ' + (idx + 1)">
+              <option value="">Select group</option>
+              <option v-for="group in mixedGroups" :key="group.id" :value="group.id">{{ group.label }}</option>
+            </select>
             <button
               class="action-button ghost icon remove-player"
               @click="removePlayer(idx)"
@@ -137,11 +156,11 @@
       <div v-if="readyToGenerate" class="summary-box surface">
         <div class="summary-row">
           <span>Playing per round</span>
-          <strong>{{ numCourts * 4 }}</strong>
+          <strong>{{ effectiveMinPlayers }}</strong>
         </div>
         <div class="summary-row">
           <span>Resting per round</span>
-          <strong>{{ Math.max(0, filledPlayers.length - numCourts * 4) }}</strong>
+          <strong>{{ filledPlayers.length - effectiveMinPlayers }}</strong>
         </div>
         <div class="summary-row">
           <span>Estimated rounds</span>
@@ -158,7 +177,11 @@
         Create schedule
       </button>
 
-      <p v-if="!readyToGenerate" class="error-hint">Enter at least {{ effectiveMinPlayers }} player names to create the schedule.</p>
+      <p v-if="!readyToGenerate" class="error-hint">
+        {{ category === 'mixed'
+          ? 'Enter names and assign a group to each player. Mixed doubles needs two men and two women per court.'
+          : 'Enter at least ' + effectiveMinPlayers + ' player names to create the schedule.' }}
+      </p>
     </section>
 
     <div v-if="gameMode !== 'club' || step < 2" class="step-actions">
@@ -169,10 +192,11 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStorage } from '../composables/useStorage.js'
-import { generateSession, estimateRounds, estimateRoundsCompletePartner } from '../composables/useRotation.js'
+import { generateSession, estimateCategoryRounds, estimateRounds, estimateRoundsCompletePartner } from '../composables/useRotation.js'
+import { getMatchCategory, hasCourtRoster, matchCategories, mixedGroups } from '../composables/matchCategories.js'
 import AppIcon from '../components/AppIcon.vue'
 import NumberStepper from '../components/NumberStepper.vue'
 import PageHeading from '../components/PageHeading.vue'
@@ -183,16 +207,17 @@ const { addGame } = useStorage()
 
 const eventName = ref('')
 const gameMode = ref('rotation')
+const category = ref('doubles')
 const step = ref(0)
 const clubConfig = ref(null)
 const namesToPaste = ref('')
 const steps = computed(() => gameMode.value === 'club'
-  ? ['Mode & session', 'Clubs & pairs', 'Schedule']
+  ? ['Mode & session', category.value === 'singles' ? 'Clubs & players' : 'Clubs & pairs', 'Schedule']
   : ['Mode & session', 'Settings', 'Players']
 )
 const gameModes = [
   { id: 'rotation', title: 'Player rotation', description: 'Automatically assign partners and opponents from your roster.' },
-  { id: 'club', title: 'Club vs Club', description: 'Schedule matches between clubs with fixed pairs.' },
+  { id: 'club', title: 'Club vs Club', description: 'Schedule matches between players or pairs from different clubs.' },
 ]
 const numCourts = ref(2)
 const rotationMode = ref('americano')
@@ -205,18 +230,26 @@ const DEFAULT_NAMES = [
 ]
 
 let nameCounter = 0
-const players = ref(
-  Array.from({ length: 8 }, () => ({
-    id: ++nameCounter,
-    name: '',
-  }))
-)
+const players = ref([])
 
-const effectiveMinPlayers = computed(() => numCourts.value * 4)
+const effectiveMinPlayers = computed(() => numCourts.value * getMatchCategory(category.value).sideSize * 2)
 const filledPlayers = computed(() => players.value.filter((player) => player.name.trim()))
-const readyToGenerate = computed(() => filledPlayers.value.length >= effectiveMinPlayers.value)
+const mixedRosterCounts = computed(() => mixedGroups.map(({ id }) =>
+  filledPlayers.value.filter((player) => player.mixedGroup === id).length
+))
+const readyToGenerate = computed(() => hasCourtRoster(category.value, numCourts.value, filledPlayers.value))
+
+watch([effectiveMinPlayers, category], ([minimum, nextCategory], [, previousCategory]) => {
+  while (players.value.length < minimum) addPlayer()
+  if (nextCategory === 'doubles' && nextCategory === previousCategory) return
+  for (let index = players.value.length - 1; index >= 0 && players.value.length > minimum; index--) {
+    const player = players.value[index]
+    if (!player.name.trim() && !player.mixedGroup) players.value.splice(index, 1)
+  }
+}, { immediate: true })
 
 const targetRounds = computed(() => {
+  if (category.value !== 'doubles') return estimateCategoryRounds(category.value, numCourts.value, filledPlayers.value)
   if (rotationMode.value === 'completePartner') {
     return estimateRoundsCompletePartner(numCourts.value, filledPlayers.value.length)
   }
@@ -236,13 +269,12 @@ async function showStep(index) {
   window.scrollTo({ top: 0 })
 }
 
-function setCourts(count) {
-  numCourts.value = count
-  while (players.value.length < count * 4) addPlayer()
+function newPlayer(name = '') {
+  return { id: ++nameCounter, name, mixedGroup: '' }
 }
 
 function addPlayer() {
-  players.value.push({ id: ++nameCounter, name: '' })
+  players.value.push(newPlayer())
 }
 
 function removePlayer(idx) {
@@ -265,7 +297,7 @@ function pasteNames() {
   for (const name of names) {
     const row = empty.shift()
     if (row) row.name = name
-    else players.value.push({ id: ++nameCounter, name })
+    else players.value.push(newPlayer(name))
   }
   namesToPaste.value = ''
 }
@@ -273,8 +305,11 @@ function pasteNames() {
 function generate() {
   if (!readyToGenerate.value) return
 
-  const roster = filledPlayers.value.map(({ id, name }) => ({ id, name: name.trim() }))
-  saveGame(generateSession(numCourts.value, roster, rotationMode.value))
+  const roster = filledPlayers.value.map(({ id, name, mixedGroup }) =>
+    category.value === 'mixed' ? { id, name: name.trim(), mixedGroup } : { id, name: name.trim() }
+  )
+  const game = generateSession(numCourts.value, roster, rotationMode.value, category.value)
+  if (game) saveGame(game)
 }
 
 function saveGame(game) {
@@ -359,6 +394,16 @@ function saveGame(game) {
 .mode-desc, .player-progress { margin-top: 8px; font-size: 14px; }
 .optional { font-weight: 400; }
 .player-progress { margin-bottom: 12px; }
+.mixed-player-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 8.5rem) auto;
+}
+.mixed-group-input { min-width: 0; }
+@media (max-width: 480px) {
+  .mixed-player-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .mixed-group-input { grid-area: 2 / 2; }
+  .mixed-player-row .remove-player { grid-area: 1 / 3; }
+}
 .remove-player, .error-hint { color: var(--danger); }
 .error-hint { margin-top: 8px; font-size: 14px; }
 .paste-players { margin-bottom: 12px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-control); }

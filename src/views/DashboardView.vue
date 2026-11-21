@@ -31,7 +31,7 @@
           <div class="game-heading">
             <span class="game-icon"><AppIcon :name="game.mode === 'club' ? 'players' : 'court'" /></span>
             <div class="game-identity">
-              <p class="game-mode">{{ game.mode === 'club' ? 'Club vs Club' : 'Player rotation' }}</p>
+              <p class="game-mode">{{ game.mode === 'club' ? 'Club vs Club' : 'Player rotation' }} · {{ getMatchCategory(game.category).label }}</p>
               <h3>{{ game.name || 'Session ' + formatDate(game.createdAt) }}</h3>
               <p class="game-meta">
                 <AppIcon name="calendar" />
@@ -90,6 +90,7 @@ import { useStorage } from '../composables/useStorage.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
 import { firebaseReady } from '../config/firebase.js'
 import { getFinalMatchResult } from '../composables/matchScores.js'
+import { getMatchCategory } from '../composables/matchCategories.js'
 import AppIcon from '../components/AppIcon.vue'
 import AppDialog from '../components/AppDialog.vue'
 import StatusBadge from '../components/StatusBadge.vue'

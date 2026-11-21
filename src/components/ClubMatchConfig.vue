@@ -2,7 +2,7 @@
   <form class="club-config" @submit.prevent="createMatch">
     <section v-show="step === 1" class="setup-section">
       <p v-if="showRosterErrors && !rosterReady" class="setup-error" role="alert">
-        Enter each club name and both players in every pair before continuing.
+        Enter each club name and all player names before continuing.
       </p>
       <div v-for="(club, clubIndex) in clubs" :key="club.id" class="setup-card surface">
         <button
@@ -13,12 +13,12 @@
           @click="expandedClubId = expandedClubId === club.id ? null : club.id"
         >
           <strong>{{ clubLabel(club) }}</strong>
-          <span>{{ filledClubPlayers(club) }}/{{ club.teams.length * 2 }} players</span>
+          <span>{{ filledClubPlayers(club) }}/{{ club.teams.length * sideSize }} players</span>
           <span aria-hidden="true">{{ expandedClubId === club.id ? '▴' : '▾' }}</span>
         </button>
         <p v-if="showRosterErrors && !clubReady(club)" class="setup-error">
           {{ !club.name.trim() ? 'Enter a club name.' : '' }}
-          {{ filledClubPlayers(club) < club.teams.length * 2 ? 'Enter all player names.' : '' }}
+          {{ filledClubPlayers(club) < club.teams.length * sideSize ? 'Enter all player names.' : '' }}
         </p>
         <div v-show="expandedClubId === club.id" :id="'club-fields-' + club.id" class="club-fields">
           <div class="setup-row">
@@ -31,18 +31,18 @@
 
           <div v-for="(team, teamIndex) in club.teams" :key="team.id" class="team-fields">
             <div class="setup-row">
-              <strong>Pair {{ teamIndex + 1 }}</strong>
-              <button v-if="club.teams.length > 1" type="button" class="action-button ghost icon remove-field" :aria-label="'Remove pair ' + (teamIndex + 1)" @click="removeTeam(club, teamIndex)"><AppIcon name="close" /></button>
+              <strong>{{ entryLabel }} {{ teamIndex + 1 }}</strong>
+              <button v-if="club.teams.length > 1" type="button" class="action-button ghost icon remove-field" :aria-label="'Remove ' + entryLabel.toLowerCase() + ' ' + (teamIndex + 1)" @click="removeTeam(club, teamIndex)"><AppIcon name="close" /></button>
             </div>
             <div class="pair-fields">
-              <label v-for="(player, playerIndex) in team.players" :key="player.id">
-                Player {{ playerIndex + 1 }}
+              <label v-for="(player, playerIndex) in team.players.slice(0, sideSize)" :key="player.id">
+                {{ category === 'mixed' ? mixedGroups[playerIndex].label : 'Player ' + (playerIndex + 1) }}
                 <input class="input" v-model="player.name" :aria-invalid="showRosterErrors && !player.name.trim()" />
               </label>
             </div>
           </div>
 
-          <button type="button" class="action-button" @click="club.teams.push(newTeam())">+ Add pair</button>
+          <button type="button" class="action-button" @click="club.teams.push(newTeam())">+ Add {{ entryLabel.toLowerCase() }}</button>
         </div>
       </div>
 
@@ -67,7 +67,7 @@
         </div>
 
         <fieldset class="schedule-method">
-          <legend>Pairing method</legend>
+          <legend>Scheduling method</legend>
           <div class="method-options">
             <label v-for="option in methodOptions" :key="option.value" class="method-card">
               <input v-model="method" type="radio" name="schedule-method" :value="option.value" />
@@ -140,7 +140,7 @@
               <label v-for="side in pairFields" :key="side.key" class="match-field">
                 {{ side.label }}
                 <select class="input" v-model="match[side.key]" :aria-label="side.label + ' in match ' + (index + 1)">
-                  <option :value="null">Select a pair</option>
+                  <option :value="null">Select {{ category === 'singles' ? 'a player' : 'a pair' }}</option>
                   <optgroup v-for="club in clubs" :key="club.id" :label="clubLabel(club)">
                     <option v-for="(team, teamIndex) in club.teams" :key="team.id" :value="team.id"
                       :disabled="club.id === teams.get(match[side.other])?.club.id">
@@ -156,7 +156,8 @@
 
       <p v-if="validationMessage" class="setup-error" aria-live="polite">{{ validationMessage }}</p>
       <div class="schedule-footer">
-        <button type="button" class="action-button" aria-label="Back to clubs and pairs" @click="$emit('back')">Back</button>
+        <button type="button" class="action-button" :aria-label="category === 'singles' ? 'Back to clubs and players' : 'Back to clubs and pairs'"
+          @click="$emit('back')">Back</button>
         <button type="submit" class="action-button primary" :disabled="!!validationMessage">Create session</button>
       </div>
     </section>
@@ -168,11 +169,15 @@ import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 import NumberStepper from './NumberStepper.vue'
 import { createClubGame, groupClubMatches, randomClubMatches } from '../composables/clubMatches.js'
+import { getMatchCategory, mixedGroups } from '../composables/matchCategories.js'
 
 const emit = defineEmits(['back', 'create'])
 const props = defineProps({
   step: { type: Number, required: true },
+  category: { type: String, required: true },
 })
+const sideSize = computed(() => getMatchCategory(props.category).sideSize)
+const entryLabel = computed(() => props.category === 'singles' ? 'Player' : 'Pair')
 const clubs = ref([])
 const expandedClubId = ref(null)
 const showRosterErrors = ref(false)
@@ -182,13 +187,13 @@ const randomMatches = ref([])
 const expandedMatchId = ref(null)
 const reordering = ref(false)
 const methodOptions = [
-  { value: 'random', label: 'Random', description: 'Automatically schedule pairs from different clubs.' },
-  { value: 'manual', label: 'Manual', description: 'Choose each pairing and set the match order.' },
+  { value: 'random', label: 'Random', description: 'Automatically schedule matches between clubs.' },
+  { value: 'manual', label: 'Manual', description: 'Choose who plays and set the match order.' },
 ]
-const pairFields = [
-  { key: 'home', other: 'away', label: 'First pair' },
-  { key: 'away', other: 'home', label: 'Second pair' },
-]
+const pairFields = computed(() => [
+  { key: 'home', other: 'away', label: 'First ' + entryLabel.value.toLowerCase() },
+  { key: 'away', other: 'home', label: 'Second ' + entryLabel.value.toLowerCase() },
+])
 const method = ref('random')
 const numCourts = ref(1)
 let nextId = 0
@@ -240,11 +245,12 @@ const matchLocations = computed(() => new Map(plannedRounds.value.flatMap((round
 const rosterReady = computed(() => clubs.value.length >= 2 && clubs.value.every(clubReady))
 
 function filledClubPlayers(club) {
-  return club.teams.flatMap((team) => team.players).filter((player) => player.name.trim()).length
+  return club.teams.flatMap((team) => team.players.slice(0, sideSize.value))
+    .filter((player) => player.name.trim()).length
 }
 
 function clubReady(club) {
-  return !!club.name.trim() && filledClubPlayers(club) === club.teams.length * 2
+  return !!club.name.trim() && filledClubPlayers(club) === club.teams.length * sideSize.value
 }
 
 function validateRoster() {
@@ -261,9 +267,9 @@ function validateRoster() {
 defineExpose({ validateRoster })
 
 const validationMessage = computed(() => {
-  if (!rosterReady.value) return 'Enter each club name and both players in every pair.'
+  if (!rosterReady.value) return 'Enter each club name and all player names.'
   if (method.value === 'manual' && readyMatchCount.value !== matchCount.value) {
-    return 'Choose two pairs from different clubs for each match.'
+    return 'Choose ' + (props.category === 'singles' ? 'two players' : 'two pairs') + ' from different clubs for each match.'
   }
   if (matches.value.length !== matchCount.value) return 'The schedule is not ready yet.'
   return ''
@@ -283,20 +289,23 @@ function clubLabel(club) {
   return club.name.trim() || 'Club ' + (clubs.value.indexOf(club) + 1)
 }
 
+function teamNames(team) {
+  return team.players.slice(0, sideSize.value).map((player) => player.name.trim()).filter(Boolean).join(' & ')
+}
+
 function teamLabel(team, index) {
-  const names = team.players.map((player) => player.name.trim()).filter(Boolean)
   const club = teams.value.get(team.id).club
-  return [clubLabel(club), 'Pair ' + (index + 1), names.join(' & ')].filter(Boolean).join(' · ')
+  return [clubLabel(club), entryLabel.value + ' ' + (index + 1), teamNames(team)].filter(Boolean).join(' · ')
 }
 
 function pairLabel(id) {
   const entry = teams.value.get(id)
   if (!entry) return ''
-  return `${clubLabel(entry.club)} · ${entry.team.players.map((player) => player.name.trim()).join(' & ')}`
+  return `${clubLabel(entry.club)} · ${teamNames(entry.team)}`
 }
 
 function manualMatchLabel(match) {
-  if (!isMatchReady(match)) return 'Choose pairs'
+  if (!isMatchReady(match)) return props.category === 'singles' ? 'Choose players' : 'Choose pairs'
   return [pairLabel(match.home), pairLabel(match.away)].join(' vs ')
 }
 
@@ -336,7 +345,7 @@ function randomize() {
 
 function createMatch() {
   if (props.step !== 2 || validationMessage.value) return
-  emit('create', createClubGame(clubs.value, plannedRounds.value, teams.value, numCourts.value))
+  emit('create', createClubGame(clubs.value, plannedRounds.value, teams.value, numCourts.value, props.category))
 }
 </script>
 
